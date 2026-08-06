@@ -232,9 +232,14 @@ class SlotCog(commands.Cog):
             seconds = int(error.retry_after % 60)
             message = f"⚠️ ({minutes}분 {seconds}초 후 가능)"
             try:
-                await ctx.author.send(message)
+                await ctx.send(message, delete_after=5, ephemeral=True)
+            except TypeError:
+                try:
+                    await ctx.send(message, delete_after=5)
+                except discord.Forbidden:
+                    pass
             except discord.Forbidden:
-                await ctx.send(message)
+                pass
 
 
 async def setup(bot):
