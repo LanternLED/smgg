@@ -4,18 +4,17 @@ import random
 import asyncio
 from utils import async_check_level, async_save_scores, apply_game_reward
 
-# 💡 슬롯머신 심볼별 등장 가중치 (숫자가 높을수록 잘 나옴)
-# 전체 합에 대한 비율로 확률이 결정됩니다. 입맛에 맞게 조절하세요!
+# 💡 슬롯머신 심볼별 등장 가중치
 SYMBOL_WEIGHTS = {
-    'cake': 5,         # 잭팟급 (확률 낮음)
-    'cookie': 8,
-    'bread': 10,
+    'cake': 4,
+    'cookie': 6,
+    'bread': 8,
     'apple': 12,
-    'watermelon': 12,
-    'carrot': 12,
-    'baked_potato': 15,
-    'potato': 20,      # 꽝/기본 (확률 높음)
-    'poison': 6        # 함정
+    'watermelon': 10,
+    'carrot': 14,
+    'baked_potato': 16,
+    'potato': 18,
+    'poison': 12
 }
 
 
@@ -96,21 +95,21 @@ class SlotView(discord.ui.View):
 
         is_sloto = False
         for i in range(3):
-            if random.random() < 0.003 and not self.auto_spin:
+            if random.random() < 0.01 and not self.auto_spin:
                 if slot_values[i] == 'apple':
                     slot_values[i] = 'golden_apple'
                     slot_icons[i] = '<a:slotg_apple:1300138918095880242>'
-                    self.bet += 7777
+                    self.bet += 333
                     is_sloto = True
                 elif slot_values[i] == 'watermelon':
                     slot_values[i] = 'golden_watermelon'
                     slot_icons[i] = '<a:slotg_watermelon:1300138951511900211>'
-                    self.bet += 7777
+                    self.bet += 333
                     is_sloto = True
                 elif slot_values[i] == 'carrot':
                     slot_values[i] = 'golden_carrot'
                     slot_icons[i] = '<a:slotg_carrot:1300138928833036351>'
-                    self.bet += 7777
+                    self.bet += 333
                     is_sloto = True
         
         slot_value = "".join(slot_icons)
@@ -188,7 +187,7 @@ class SlotView(discord.ui.View):
             elif slot_values[0] == 'carrot': return 777, True
             elif slot_values[0] == 'baked_potato': return 666, True
             elif slot_values[0] == 'potato': return 555, True
-            else: return 444, True
+            else: return 0, True
         
         elif len(set(categories)) == 1 and len(set(slot_values)) == 3:
             if categories[0] == 'dessert': return 880, True
@@ -204,12 +203,7 @@ class SlotView(discord.ui.View):
             elif slot_values.count('carrot') == 2: return 330, True
             elif slot_values.count('baked_potato') == 2: return 220, True
             elif slot_values.count('potato') == 2: return 110, True
-            else: return 44, True
-             
-        elif len(set(slot_values)) == 2:
-            if slot_values.count('poison') == 1: return 0, False
-            elif slot_values.count('poison') == 2: return 44, False
-            else: return 55, False
+            else: return 0, True
 
         else:
             return 0, False

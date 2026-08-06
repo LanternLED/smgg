@@ -36,6 +36,19 @@ STATIC_ICONS = {
     'poison': '<a:slot_poison:1300138235921432586>',
 }
 
+# 당첨(또는 버스트) 라인에 속한 칸에 쓰는 번쩍이는 애니메이션 이모지
+WINNING_ICONS = {
+    'cake': '<a:sloto_cake:1300139130839367743>',
+    'cookie': '<a:sloto_cookie:1300139166201282622>',
+    'bread': '<a:sloto_bread:1300139116737990656>',
+    'apple': '<a:sloto_apple:1300139082244165693>',
+    'watermelon': '<a:sloto_watermelon:1300139208991703203>',
+    'carrot': '<a:sloto_carrot:1300139151324217354>',
+    'baked_potato': '<a:sloto_baked_potato:1300139103249240128>',
+    'potato': '<a:sloto_potato:1300139194944978955>',
+    'poison': '<a:sloto_poison:1300139179568791652>',
+}
+
 GOLDEN_EMOJIS = {
     'apple': '<a:slotgg_apple:1300139025222336662>',
     'watermelon': '<a:slotgg_watermelon:1300139062715482254>',
@@ -54,14 +67,21 @@ def render_board_animated(board):
         lines.append(res)
     return "\n".join(lines)
 
-def render_board_static(board):
-    """최종 완전히 정지된 상태 (황금 과일 포함)"""
+def render_board_static(board, winning_positions=None):
+    """최종 완전히 정지된 상태 (황금 과일, 당첨 라인 번쩍임 포함)
+
+    winning_positions: [(r, c), ...] — 이 좌표들은 골든이 아닌 한 WINNING_ICONS로 렌더링됨.
+    황금(is_golden)이 최우선이고, 그다음이 당첨 라인 번쩍임, 마지막이 기본 정지 아이콘.
+    """
+    winning_set = set(winning_positions) if winning_positions else set()
     lines = []
     for r in range(3):
         res = ""
-        for cell in board[r]:
+        for c, cell in enumerate(board[r]):
             if cell.is_golden and cell.symbol in GOLDEN_EMOJIS:
                 res += GOLDEN_EMOJIS[cell.symbol]
+            elif (r, c) in winning_set:
+                res += WINNING_ICONS[cell.symbol]
             else:
                 res += STATIC_ICONS[cell.symbol]
         lines.append(res)
@@ -126,12 +146,10 @@ class SlotView(discord.ui.View):
                     await self.slot_msg.edit(content=render_board_static(frame))
                     await asyncio.sleep(1.2)
 
-            # 단계 4: 완전히 정지된 최종 화면 적용 (API Edit #3)
-            final_board_text = render_board_static(engine.board)
-            await self.slot_msg.edit(content=final_board_text)
-
-            # 결과 처리 및 자랑하기 버튼 활성화
+            # 단계 4: 결과 계산 후, 당첨(또는 버스트) 라인을 강조한 최종 화면 적용 (API Edit #3)
             reward, details = engine.calculate_reward()
+            final_board_text = render_board_static(engine.board, winning_positions=engine.winning_positions)
+            await self.slot_msg.edit(content=final_board_text)
 
             # load → 수정 → save 구간은 다른 커맨드(예: 칩판매)와
             # 동시에 실행되면 서로의 변경을 덮어쓸 수 있으므로 락으로 보호한다.

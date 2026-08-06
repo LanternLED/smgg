@@ -35,6 +35,7 @@ class SlotCell:
 class SlotEngine:
     def __init__(self):
         self.board = []
+        self.winning_positions = []  # 마지막 calculate_reward() 결과의 당첨(또는 버스트) 좌표
 
     def generate_board(self):
         symbols = list(SYMBOL_WEIGHTS.keys())
@@ -136,11 +137,14 @@ class SlotEngine:
         for m in matches:
             if m['symbol'] == 'poison':
                 # 독감자 3연속 이상 라인이 하나라도 발견되면, 즉시 모든 계산 중단 및 0칩 반환
+                # 버스트 라인도 연출상 강조할 수 있게 좌표를 남겨둔다.
+                self.winning_positions = list(dict.fromkeys(m['cells']))
                 return 0, ["☠️ 독!감!자! (당신은 버스트했다.)"]
 
         # 2. 독감자가 없는 안전한 상태라면 정상적으로 계산
         total_reward = 0
         details = []
+        winning_cells = []
         
         for m in matches:
             sym = m['symbol']
@@ -158,7 +162,11 @@ class SlotEngine:
                 
             total_reward += line_reward
             details.append(f"{m['type']} ({sym}) +{line_reward:,}")
-            
+            winning_cells.extend(cells)
+
+        # 중복 좌표 제거(순서는 유지) — 대각선/가로/세로 라인이 겹칠 수 있음
+        self.winning_positions = list(dict.fromkeys(winning_cells))
+
         return total_reward, details
 
 # --- 기대값(EV) 시뮬레이터 (개발용) ---
