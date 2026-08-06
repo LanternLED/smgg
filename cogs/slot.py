@@ -225,7 +225,7 @@ class SlotCog(commands.Cog):
         self.bot = bot
 
     @commands.command(name='슬롯')
-    @commands.cooldown(1, 600, commands.BucketType.user)
+    @commands.cooldown(1, 180, commands.BucketType.user)
     async def show_slot_v2(self, ctx):
         user_scores = await async_load_scores(str(ctx.author.id))
         chips = int(user_scores.get("chips", 0) or 0)
