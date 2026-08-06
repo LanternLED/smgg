@@ -16,7 +16,7 @@ SYMBOL_WEIGHTS = {
 
 # 심볼 기본 가치
 SYMBOL_VALUES = {
-    'cake': 7200, 'cookie': 4800, 'bread': 2400,
+    'cake': 10000, 'cookie': 5000, 'bread': 2500,
     'apple': 1200, 'watermelon': 1600, 'carrot': 800,
     'baked_potato': 500, 'potato': 200, 'poison': 0
 }
