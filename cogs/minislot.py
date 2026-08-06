@@ -224,7 +224,7 @@ class SlotView(discord.ui.View):
                     item.disabled = True
             await interaction.response.edit_message(view=self)
 
-            while self.auto_spin and self.spin_count < 50:
+            while self.auto_spin and self.spin_count < 77:
                 user_scores = await async_check_level(self.user_id)
                 if user_scores["chips"] < 50:
                     self.auto_spin = False
@@ -233,7 +233,7 @@ class SlotView(discord.ui.View):
                 
                 await self._spin_slot(interaction)
                 self.spin_count += 1
-                button.label = f"자동 ({50-self.spin_count})"
+                button.label = f"자동 ({77-self.spin_count})"
                 await interaction.edit_original_response(view=self)
                 await asyncio.sleep(2)
 
