@@ -1,0 +1,5 @@
+aiosqlite>=0.17.0
+python-dotenv
+discord.py
+flake8
+mypy
