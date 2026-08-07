@@ -162,8 +162,8 @@ class QuizButton(discord.ui.Button):
         
         if self.index == view.correct_idx:
             user_scores["quiz_streak"] += 1
-            reward = 20 + user_scores["quiz_streak"]
-            bonus = apply_game_reward(user_scores, reward, exp_rate=1)
+            reward = -2 + user_scores["quiz_streak"] * 3
+            bonus = apply_game_reward(user_scores, reward, exp_rate=0.5)
             bonus_str = f" (부스터 +{bonus})" if bonus > 0 else ""
             result_msg = f"⭕ '{view.definition}'의 뜻을 가진 단어는?\n(+{reward}{bonus_str}) (보유 칩: {user_scores['chips']})"
         else:

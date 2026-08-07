@@ -1066,12 +1066,11 @@ async def end_game(state: GameState, channel: discord.TextChannel) -> None:
     if score > 0:
         user_scores = await async_check_level(uid_str)
         earned_chips = score
-        earned_exp = int(score * 0.5)
         bonus = apply_game_reward(user_scores, earned_chips, exp_rate=0.2)
         bonus_str = f" (부스터 +{bonus})" if bonus > 0 else ""
         
         await async_save_scores(uid_str, user_scores)
-        reward_text = f"\n💰 정산 완료: 칩 +{earned_chips}{bonus_str} / 경험치 +{earned_exp}\n(보유 칩: {user_scores['chips']})"
+        reward_text = f"\n💰 정산 완료: 칩 +{earned_chips}{bonus_str}\n(보유 칩: {user_scores['chips']})"
         
         rank = await save_and_get_weekly_ranking(uid_int, state.user_name, score)
         if 0 < rank <= 3:

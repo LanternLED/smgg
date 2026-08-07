@@ -1189,7 +1189,7 @@ async def _mahjong_end(interaction, game: MahjongGame, message: discord.Message)
     user_scores = await async_check_level(user_id)
     bonus = 0
     if result["reward_eligible"]:
-        bonus = apply_game_reward(user_scores, reward, exp_rate=0.1)
+        bonus = apply_game_reward(user_scores, reward, exp_rate=0.25)
 
     await async_save_scores(user_id, user_scores)
 
