@@ -4,6 +4,7 @@
 # 2. 데이터베이스 및 저장 파일 (용량이 크거나 수시로 내용이 바뀜)
 dictionary.db
 scores.db
+weekly_ranking.json
 
 # 3
 venv/

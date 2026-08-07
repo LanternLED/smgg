@@ -115,6 +115,7 @@ class SlotView(discord.ui.View):
         slot_value = "".join(slot_icons)
         await interaction.edit_original_response(content=slot_value, view=self)
         if is_sloto:
+            await asyncio.sleep(1.4)
             for i in range(3):
                 if slot_values[i] == 'golden_apple':
                     slot_icons[i] = '<a:slotgg_apple:1300139025222336662>'
@@ -122,7 +123,6 @@ class SlotView(discord.ui.View):
                     slot_icons[i] = '<a:slotgg_watermelon:1300139062715482254>'
                 elif slot_values[i] == 'golden_carrot':
                     slot_icons[i] = '<a:slotgg_carrot:1300139044453220436>'
-            await asyncio.sleep(1.4)
             slot_value = "".join(slot_icons)
             self.slotmsg2 += " **황금 과일!**"
         self.slotmsg = slot_value
@@ -187,7 +187,7 @@ class SlotView(discord.ui.View):
             elif slot_values[0] == 'carrot': return 777, True
             elif slot_values[0] == 'baked_potato': return 666, True
             elif slot_values[0] == 'potato': return 555, True
-            else: return 0, True
+            else: return 0, False
         
         elif len(set(categories)) == 1 and len(set(slot_values)) == 3:
             if categories[0] == 'dessert': return 880, True
@@ -203,7 +203,7 @@ class SlotView(discord.ui.View):
             elif slot_values.count('carrot') == 2: return 330, True
             elif slot_values.count('baked_potato') == 2: return 220, True
             elif slot_values.count('potato') == 2: return 110, True
-            else: return 0, True
+            else: return 0, False
 
         else:
             return 0, False

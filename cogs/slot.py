@@ -50,9 +50,18 @@ WINNING_ICONS = {
 }
 
 GOLDEN_EMOJIS = {
-    'apple': '<a:slotgg_apple:1300139025222336662>',
-    'watermelon': '<a:slotgg_watermelon:1300139062715482254>',
-    'carrot': '<a:slotgg_carrot:1300139044453220436>'
+    'apple': {
+        'initial': '<a:slotg_apple:1300138918095880242>',
+        'final': '<a:slotgg_apple:1300139025222336662>'
+    },
+    'watermelon': {
+        'initial': '<a:slotg_watermelon:1300138951511900211>',
+        'final': '<a:slotgg_watermelon:1300139062715482254>'
+    },
+    'carrot': {
+        'initial': '<a:slotg_carrot:1300138928833036351>',
+        'final': '<a:slotgg_carrot:1300139044453220436>'
+    }
 }
 
 # --- 렌더링 함수 ---
@@ -67,11 +76,12 @@ def render_board_animated(board):
         lines.append(res)
     return "\n".join(lines)
 
-def render_board_static(board, winning_positions=None):
+def render_board_static(board, winning_positions=None, golden_variant='final'):
     """최종 완전히 정지된 상태 (황금 과일, 당첨 라인 번쩍임 포함)
 
     winning_positions: [(r, c), ...] — 이 좌표들은 골든이 아닌 한 WINNING_ICONS로 렌더링됨.
     황금(is_golden)이 최우선이고, 그다음이 당첨 라인 번쩍임, 마지막이 기본 정지 아이콘.
+    golden_variant: 'initial' 또는 'final'로 황금 과일의 애니메이션 단계를 선택한다.
     """
     winning_set = set(winning_positions) if winning_positions else set()
     lines = []
@@ -79,7 +89,8 @@ def render_board_static(board, winning_positions=None):
         res = ""
         for c, cell in enumerate(board[r]):
             if cell.is_golden and cell.symbol in GOLDEN_EMOJIS:
-                res += GOLDEN_EMOJIS[cell.symbol]
+                variant_map = GOLDEN_EMOJIS[cell.symbol]
+                res += variant_map.get(golden_variant, variant_map['final'])
             elif (r, c) in winning_set:
                 res += WINNING_ICONS[cell.symbol]
             else:
@@ -139,12 +150,14 @@ class SlotView(discord.ui.View):
             await self.slot_msg.edit(content=render_board_animated(engine.board))
             await asyncio.sleep(2.0)  # 가장 긴 3번 애니메이션 종료 대기
 
-            # 단계 3: 황금 연쇄 발생 시 프레임 변경 (있을 때만 API Edit)
+            # 단계 3: 황금 연쇄 발생 시 미니슬롯처럼 초기/최종 두 단계로 애니메이션 표시
             golden_frames = engine.trigger_golden()
             if golden_frames:
                 for frame in golden_frames:
-                    await self.slot_msg.edit(content=render_board_static(frame))
-                    await asyncio.sleep(1.2)
+                    await self.slot_msg.edit(content=render_board_static(frame, golden_variant='initial'))
+                    await asyncio.sleep(0.7)
+                    await self.slot_msg.edit(content=render_board_static(frame, golden_variant='final'))
+                    await asyncio.sleep(0.7)
 
             # 단계 4: 결과 계산 후, 당첨(또는 버스트) 라인을 강조한 최종 화면 적용 (API Edit #3)
             reward, details = engine.calculate_reward()
@@ -225,7 +238,7 @@ class SlotCog(commands.Cog):
         self.bot = bot
 
     @commands.command(name='슬롯')
-    @commands.cooldown(1, 180, commands.BucketType.user)
+    @commands.cooldown(1, 60, commands.BucketType.user)
     async def show_slot_v2(self, ctx):
         user_scores = await async_load_scores(str(ctx.author.id))
         chips = int(user_scores.get("chips", 0) or 0)
