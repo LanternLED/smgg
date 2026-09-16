@@ -105,9 +105,18 @@ def apply_game_reward(user_scores: dict, chip_gain: int, *, exp_rate: float = 0.
     return apply_booster(user_scores, base_chip_gain)
 
 
+def _tune_connection(conn: sqlite3.Connection) -> sqlite3.Connection:
+    # WAL: 쓰기 중에도 읽기가 막히지 않도록. busy_timeout: 락 경합 시
+    # 곧바로 에러 내지 않고 잠깐 기다리도록(기본 5초보다 넉넉하게).
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=10000")
+    return conn
+
+
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  
+    conn.row_factory = sqlite3.Row
+    _tune_connection(conn)
     return conn
 
 
@@ -135,23 +144,32 @@ def load_scores(user_id: str):
     res["level"] = _coerce_int(res.get("level"), 0)
     res["score"] = _coerce_int(res.get("score"), 0)
     res["active"] = _coerce_int(res.get("active"), 0)
+    res["quiz_streak"] = _coerce_int(res.get("quiz_streak"), 0)
+    res["lottery_pity"] = _coerce_int(res.get("lottery_pity"), 0)
+    # mahjong_played는 TEXT(DEFAULT NULL)라 정수 변환하지 않고 그대로 둔다
     return res
 
 
-def save_scores(user_id: str, user_scores: dict):
+def _filter_score_updates(user_scores: dict) -> dict:
     filtered_updates = {}
     for k, v in user_scores.items():
         if k == "user_id":
             continue
         if v is None:
             continue
-        if k in {"booster", "chips", "exp", "level", "score", "active"}:
+        if k in {"booster", "chips", "exp", "level", "score", "active", "quiz_streak", "lottery_pity"}:
             filtered_updates[k] = _coerce_int(v, 0)
         else:
             filtered_updates[k] = v
+    return filtered_updates
+
+
+def save_scores(user_id: str, user_scores: dict):
+    filtered_updates = _filter_score_updates(user_scores)
     if not filtered_updates:
         return
     with sqlite3.connect(DB_PATH) as conn:
+        _tune_connection(conn)
         cursor = conn.cursor()
         set_clause = ", ".join([f"{col} = ?" for col in filtered_updates])
         values = list(filtered_updates.values()) + [user_id]
@@ -178,11 +196,11 @@ def calculate_score(user_scores):
 
 
 async def async_load_scores(user_id: str):
-    return await asyncio.to_thread(load_scores, user_id)
+    return await asyncio.to_thread(load_scores, str(user_id))
 
 
 async def async_save_scores(user_id: str, user_scores: dict):
-    return await asyncio.to_thread(save_scores, user_id, user_scores)
+    await asyncio.to_thread(save_scores, str(user_id), user_scores)
 
 
 async def async_check_level(user_id: str):
