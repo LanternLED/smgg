@@ -255,18 +255,10 @@ def grant_daily_booster(user_scores: dict):
 
 
 async def async_grant_daily_booster(user_id: str):
-    user_scores = calculate_score(await async_load_scores(user_id))
-    gained = grant_daily_booster(user_scores)
-    if gained <= 0:
-        return None
-    await async_save_scores(user_id, user_scores)
-    return gained, user_scores
-
-
-async def async_grant_daily_booster_if_needed(user_id: str):
-    """하루 1회 상호작용 시 부스터를 지급한다."""
-    result = await async_grant_daily_booster(user_id)
-    if result is None:
-        return None
-    gained, user_scores = result
-    return gained, user_scores
+    async with get_user_lock(user_id):
+        user_scores = calculate_score(await async_load_scores(user_id))
+        gained = grant_daily_booster(user_scores)
+        if gained <= 0:
+            return None
+        await async_save_scores(user_id, user_scores)
+        return gained, user_scores

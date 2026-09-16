@@ -181,6 +181,3 @@ if __name__ == '__main__':
         reward, _ = engine.calculate_reward()
         total_earned += reward
     print(f"1회 스핀 평균 획득(기대값): {total_earned / spins:.2f} 칩")
-
-async def setup(bot):
-    pass

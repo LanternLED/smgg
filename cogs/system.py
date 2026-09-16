@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-import asyncio
 import re
 from datetime import datetime, timedelta
 
@@ -158,8 +157,8 @@ class SystemCog(commands.Cog):
             await self._grant_daily_booster_if_needed(ctx)
             user_scores = await async_load_scores(user_id)
         except Exception as exc:
-            print(f"info_self failed: {exc}")
-            user_scores = {}
+            await ctx.send(f"정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요. (오류: {type(exc).__name__})")
+            return
 
         user_scores.setdefault('level', 0)
         user_scores.setdefault('exp', 0)
@@ -183,8 +182,8 @@ class SystemCog(commands.Cog):
             await self._grant_daily_booster_if_needed(ctx)
             user_scores = await async_load_scores(user_id)
         except Exception as exc:
-            print(f"info_other failed: {exc}")
-            user_scores = {}
+            await ctx.send(f"정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요. (오류: {type(exc).__name__})")
+            return
 
         user_scores.setdefault('level', 0)
         user_scores.setdefault('exp', 0)

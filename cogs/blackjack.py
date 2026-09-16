@@ -4,7 +4,10 @@ import random
 import asyncio
 import os
 import json
-from utils import async_check_level, async_save_scores, apply_game_reward
+from utils import (
+    async_check_level, async_save_scores, async_grant_daily_booster,
+    apply_game_reward,
+)
 
 active_blackjack_games = {}
 blackjack_data = {"deck": []}
@@ -102,6 +105,7 @@ class BlackjackView(discord.ui.View):
     @discord.ui.button(custom_id="action_double_down", label="더블 다운", style=discord.ButtonStyle.primary)
     async def double_down(self, interaction: discord.Interaction, button: discord.ui.Button):
         if str(interaction.user.id) == self.game.user_id:
+            await async_grant_daily_booster(self.game.user_id)
             self.game.player_double_down()
             await interaction.response.defer()
             user_scores = await async_check_level(self.game.user_id)
@@ -113,6 +117,7 @@ class BlackjackView(discord.ui.View):
     @discord.ui.button(custom_id="action_hit", label="히트", style=discord.ButtonStyle.primary)
     async def hit(self, interaction: discord.Interaction, button: discord.ui.Button):
         if str(interaction.user.id) == self.game.user_id:
+            await async_grant_daily_booster(self.game.user_id)
             self.game.player_hit()
             await interaction.response.defer()
             for child in self.children:
@@ -131,6 +136,7 @@ class BlackjackView(discord.ui.View):
     @discord.ui.button(custom_id="action_stand", label="스탠드", style=discord.ButtonStyle.secondary)
     async def stand(self, interaction: discord.Interaction, button: discord.ui.Button):
         if str(interaction.user.id) == self.game.user_id:
+            await async_grant_daily_booster(self.game.user_id)
             self.game.player_stand()
             await interaction.response.defer()
             user_scores = await async_check_level(self.game.user_id)
@@ -145,6 +151,7 @@ class BlackjackCog(commands.Cog):
         
     @commands.command(name='블랙잭판엎기')
     async def blackjack_shuffle(self, ctx):
+        await async_grant_daily_booster(str(ctx.author.id))
         await async_load_deck()
         blackjack_data["deck"] = create_deck()
         await ctx.send("손님...! 이러시면 안됩니다...!\n카드가 다 쏟아졌으니, 덱을 새로 준비해드리는게 낫겠습니다...")
@@ -155,6 +162,7 @@ class BlackjackCog(commands.Cog):
     async def blackjack(self, ctx, bet: int = 500):
         await async_load_deck()
         user_id = str(ctx.author.id)
+        await async_grant_daily_booster(user_id)
         if user_id in active_blackjack_games:
             await ctx.send("이미 진행 중인 블랙잭 게임이 있습니다.")
             return

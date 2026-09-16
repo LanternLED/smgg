@@ -2,7 +2,10 @@ import discord
 from discord.ext import commands
 import random
 import asyncio
-from utils import async_check_level, async_save_scores, apply_game_reward
+from utils import (
+    async_check_level, async_save_scores, async_grant_daily_booster,
+    apply_game_reward,
+)
 
 # 💡 슬롯머신 심볼별 등장 가중치
 SYMBOL_WEIGHTS = {
@@ -213,6 +216,7 @@ class SlotView(discord.ui.View):
         if str(interaction.user.id) != self.user_id:
             await interaction.response.send_message("본인만 조작할 수 있습니다.", ephemeral=True)
             return
+        await async_grant_daily_booster(self.user_id)
 
         self.auto_spin = not self.auto_spin
         self.spin_count = 0
@@ -256,6 +260,7 @@ class SlotView(discord.ui.View):
         if str(interaction.user.id) != self.user_id:
             await interaction.response.send_message("본인만 조작할 수 있습니다.", ephemeral=True)
             return
+        await async_grant_daily_booster(self.user_id)
         
         await interaction.response.defer()
         for item in self.children:
@@ -266,6 +271,7 @@ class SlotView(discord.ui.View):
     @discord.ui.button(custom_id="share", label="자랑하기", style=discord.ButtonStyle.primary)
     async def share(self, interaction: discord.Interaction, button: discord.ui.Button):
         if str(interaction.user.id) == self.user_id:
+            await async_grant_daily_booster(self.user_id)
             await interaction.response.defer()
             await interaction.channel.send(f"{self.slotmsg}")
             await interaction.channel.send(f"<@{int(self.user_id)}> {self.slotmsg2}")
@@ -283,6 +289,7 @@ class MiniSlotCog(commands.Cog):
     @commands.cooldown(1, 600, commands.BucketType.user)
     async def show_slot(self, ctx):
         user_id = str(ctx.author.id)
+        await async_grant_daily_booster(user_id)
         user_scores = await async_check_level(user_id)
         
         if user_scores.get("chips", 0) < 50:

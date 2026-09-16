@@ -4,10 +4,15 @@ import sqlite3
 import random
 import asyncio
 import re
-from utils import async_check_level, async_save_scores, apply_game_reward
+import logging
+from utils import (
+    async_check_level, async_save_scores, async_grant_daily_booster,
+    apply_game_reward,
+)
 
 QUIZ_DB_PATH = "dictionary.db"
 user_quiz_sessions = {}
+logger = logging.getLogger(__name__)
 
 def get_quiz_db_connection():
     conn = sqlite3.connect(QUIZ_DB_PATH)
@@ -155,6 +160,7 @@ class QuizButton(discord.ui.Button):
         if str(interaction.user.id) != view.user_id:
             await interaction.response.send_message("이 퀴즈는 호출자만 답할 수 있습니다!", ephemeral=True)
             return
+        await async_grant_daily_booster(view.user_id)
         if view.answered: return
             
         view.answered = True
@@ -216,15 +222,15 @@ class QuizCog(commands.Cog):
             view.message = msg
             user_quiz_sessions[user_id] = view
 
-        except Exception as e:
-            import traceback
-            error_msg = f"퀴즈 준비 중 치명적 에러 발생!\n```py\n{traceback.format_exc()}\n```"
-            await msg.edit(content=error_msg[:2000])
+        except Exception:
+            logger.exception("퀴즈 준비 중 오류 발생 (user_id=%s)", user_id)
+            await msg.edit(content="퀴즈를 준비하지 못했습니다. 잠시 후 다시 시도해주세요.")
 
     @commands.command(name='퀴즈')
     async def quiz(self, ctx):
         await ctx.message.delete()
         user_id = str(ctx.author.id)
+        await async_grant_daily_booster(user_id)
         if user_id in user_quiz_sessions:
             await ctx.send(f"이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
             return
@@ -235,6 +241,7 @@ class QuizCog(commands.Cog):
     async def quizinf(self, ctx):
         await ctx.message.delete()
         user_id = str(ctx.author.id)
+        await async_grant_daily_booster(user_id)
         if user_id in user_quiz_sessions:
             await ctx.send(f"이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
             return
