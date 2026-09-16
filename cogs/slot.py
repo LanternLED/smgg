@@ -4,7 +4,10 @@ import asyncio
 import logging
 import random
 from slot_engine import SlotEngine
-from utils import async_load_scores, async_save_scores, apply_game_reward, get_user_lock
+from utils import (
+    async_load_scores, async_save_scores, async_grant_daily_booster,
+    apply_game_reward, get_user_lock,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +126,7 @@ class SlotView(discord.ui.View):
         if str(interaction.user.id) != self.user_id:
             await interaction.response.send_message("본인만 조작할 수 있습니다.", ephemeral=True)
             return
+        await async_grant_daily_booster(self.user_id)
 
         if self.is_rolling:
             # 이미 굴러가는 중 — 조용히 무시하지 않고 상호작용에는 응답해서
@@ -223,6 +227,7 @@ class SlotView(discord.ui.View):
 
     async def share(self, interaction: discord.Interaction):
         if str(interaction.user.id) == self.user_id:
+            await async_grant_daily_booster(self.user_id)
             await interaction.response.defer()
             await interaction.channel.send(f"{self.slotmsg}")
             await interaction.channel.send(f"<@{int(self.user_id)}> {self.slotmsg2}")
@@ -240,6 +245,7 @@ class SlotCog(commands.Cog):
     @commands.command(name='슬롯')
     @commands.cooldown(1, 60, commands.BucketType.user)
     async def show_slot_v2(self, ctx):
+        await async_grant_daily_booster(str(ctx.author.id))
         user_scores = await async_load_scores(str(ctx.author.id))
         chips = int(user_scores.get("chips", 0) or 0)
         if chips < 1000:

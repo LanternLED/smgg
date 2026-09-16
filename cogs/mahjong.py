@@ -4,7 +4,10 @@ from discord.ext import commands
 import random
 from typing import List, Optional, Tuple
 from collections import Counter
-from utils import async_check_level, async_save_scores, apply_game_reward
+from utils import (
+    async_check_level, async_save_scores, async_grant_daily_booster,
+    apply_game_reward,
+)
 
 TILE_EMOJI = {
     "1m":   "<:1man:1485342473407434895>", "9m":   "<:9man:1485342488158929067>",
@@ -991,6 +994,7 @@ class MahjongDiscardView(discord.ui.View):
         if str(interaction.user.id) != self.game.user_id:
             await interaction.response.send_message("이 게임은 호출자만 조작할 수 있습니다.", ephemeral=True)
             return False
+        await async_grant_daily_booster(self.game.user_id)
         return True
  
     def _make_discard_cb(self, tile: str):
@@ -1085,6 +1089,7 @@ class MahjongRiichiSelectView(discord.ui.View):
             if str(interaction.user.id) != self.game.user_id:
                 await interaction.response.send_message("호출자만 조작할 수 있습니다.", ephemeral=True)
                 return
+            await async_grant_daily_booster(self.game.user_id)
             self.game.do_riichi(tile)
             self.stop()
             await interaction.response.defer()
@@ -1110,6 +1115,7 @@ class MahjongAnkanSelectView(discord.ui.View):
             if str(interaction.user.id) != self.game.user_id:
                 await interaction.response.send_message("호출자만 조작할 수 있습니다.", ephemeral=True)
                 return
+            await async_grant_daily_booster(self.game.user_id)
             self.game.do_ankan(tile)
             rinshan = self.game.do_rinshan_draw()
             self.stop()
@@ -1211,6 +1217,7 @@ class MahjongCog(commands.Cog):
     @commands.command(name="마작")
     async def mahjong_start(self, ctx):
         user_id = str(ctx.author.id)
+        await async_grant_daily_booster(user_id)
         await async_check_level(user_id)
 
         if user_id in active_mahjong_games:

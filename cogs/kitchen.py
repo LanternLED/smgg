@@ -9,7 +9,10 @@ import os
 from datetime import date
 
 # utils.py에서 공통 함수 불러오기
-from utils import async_check_level, async_save_scores, apply_game_reward
+from utils import (
+    async_check_level, async_save_scores, async_grant_daily_booster,
+    apply_game_reward,
+)
 
 INGREDIENTS = ["김치", "참치", "두부", "대패", "대파"]
 
@@ -1049,7 +1052,7 @@ async def update_embed(state: GameState) -> None:
     if state.embed_msg:
         try:
             await state.embed_msg.edit(embeds=[make_guide_embed(), state.make_embed()])
-        except Exception:
+        except discord.HTTPException:
             pass
 
 async def end_game(state: GameState, channel: discord.TextChannel) -> None:
@@ -1093,12 +1096,12 @@ async def end_game(state: GameState, channel: discord.TextChannel) -> None:
     if state.embed_msg:
         try:
             await state.embed_msg.delete()
-        except Exception:
+        except discord.HTTPException:
             pass
 
     try:
         await channel.send(embed=embed)
-    except Exception:
+    except discord.HTTPException:
         pass
 class KitchenCog(commands.Cog):
     def __init__(self, bot):
@@ -1110,6 +1113,7 @@ class KitchenCog(commands.Cog):
         uid = message.author.id
         if uid not in active_kitchen_games: return
         if message.content.startswith("손목걸고"): return
+        await async_grant_daily_booster(str(uid))
         
         state = active_kitchen_games[uid]
         if message.channel.id != state.channel_id: return
@@ -1125,6 +1129,7 @@ class KitchenCog(commands.Cog):
     @commands.command(name="주방입장")
     async def join_kitchen(self, ctx: commands.Context) -> None:
         uid = ctx.author.id
+        await async_grant_daily_booster(str(uid))
         if uid in active_kitchen_games:
             await ctx.send("이미 주방에서 요리 중입니다!", delete_after=5)
             return
@@ -1139,6 +1144,7 @@ class KitchenCog(commands.Cog):
     @commands.command(name="주방퇴장")
     async def leave_kitchen(self, ctx: commands.Context) -> None:
         uid = ctx.author.id
+        await async_grant_daily_booster(str(uid))
         if uid not in active_kitchen_games:
             await ctx.send("현재 주방에 없습니다.", delete_after=5)
             return
