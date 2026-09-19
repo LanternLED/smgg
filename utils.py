@@ -55,7 +55,7 @@ def _coerce_int(value, default=0) -> int:
     if isinstance(value, (int, float)):
         return int(value)
     try:
-        return int(str(value).strip())
+        return int(str(value).strip().replace(",", ""))
     except (ValueError, TypeError):
         return default
 

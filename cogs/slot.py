@@ -134,6 +134,15 @@ class SlotView(discord.ui.View):
             if not interaction.response.is_done():
                 await interaction.response.defer()
             return
+
+        user_scores = await async_load_scores(self.user_id)
+        if int(user_scores.get("chips", 0) or 0) < 1000:
+            await interaction.response.send_message(
+                "다시 돌리려면 칩 1,000개가 필요합니다.",
+                ephemeral=True,
+            )
+            return
+
         self.is_rolling = True
 
         await interaction.response.defer()
@@ -193,12 +202,20 @@ class SlotView(discord.ui.View):
             self.slotmsg = final_board_text
             self.slotmsg2 = result_text
 
-            self.remove_item(button)
-            share_button = discord.ui.Button(
-                custom_id="share", label="자랑하기", style=discord.ButtonStyle.primary
-            )
-            share_button.callback = self.share
-            self.add_item(share_button)
+            if not self.auto_spin:
+                pull_button = next(
+                    (item for item in self.children if item.custom_id == "action_pull"),
+                    None,
+                )
+                if pull_button is not None:
+                    pull_button.label = "다시 돌리기"
+                    pull_button.disabled = user_scores["chips"] < 1000
+                if not any(item.custom_id == "share" for item in self.children):
+                    share_button = discord.ui.Button(
+                        custom_id="share", label="자랑하기", style=discord.ButtonStyle.primary
+                    )
+                    share_button.callback = self.share
+                    self.add_item(share_button)
 
             await interaction.message.edit(content=f"<@{self.user_id}>\n{result_text}", view=self)
 
@@ -243,7 +260,6 @@ class SlotCog(commands.Cog):
         self.bot = bot
 
     @commands.command(name='슬롯')
-    @commands.cooldown(1, 60, commands.BucketType.user)
     async def show_slot_v2(self, ctx):
         await async_grant_daily_booster(str(ctx.author.id))
         user_scores = await async_load_scores(str(ctx.author.id))

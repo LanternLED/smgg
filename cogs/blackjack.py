@@ -32,6 +32,10 @@ def create_deck():
 def card_value_to_string(value):
     return {1: 'A', 11: 'J', 12: 'Q', 13: 'K'}.get(value, str(value))
 
+def format_card(card):
+    value, suit = card
+    return f"{card_value_to_string(value)}{suit}"
+
 def calculate_hand_value(hand):
     value = 0
     aces = 0
@@ -94,8 +98,8 @@ class BlackjackView(discord.ui.View):
         self.game = game
 
     def make_embed(self, user_scores: dict):
-        player_str = " ".join(f"{card_value_to_string(v)}{s}" for v, s in self.game.player_cards)
-        dealer_first = f"{card_value_to_string(self.game.dealer_cards[0][0])}{self.game.dealer_cards[0]}"
+        player_str = " ".join(format_card(card) for card in self.game.player_cards)
+        dealer_first = format_card(self.game.dealer_cards[0])
         deck_count = len(self.game.deck)
         embed = discord.Embed(title="블랙잭", description=f"베팅: {self.game.bet}칩 | 덱 남음: {deck_count}")
         embed.add_field(name="플레이어", value=f"{player_str}\n합: {self.game.player_total()}", inline=False)
@@ -240,8 +244,8 @@ class BlackjackCog(commands.Cog):
                 msg2_value += f"\n칩 {game.bet} (보유 칩: {user_scores['chips']})"
 
             final_embed = discord.Embed(title="블랙잭 결과", description=msg2_value)
-            final_embed.add_field(name="플레이어 최종", value=f"{' '.join(f'{card_value_to_string(v)}{s}' for v,s in game.player_cards)} (합: {game.player_total()})", inline=False)
-            final_embed.add_field(name="딜러 최종", value=f"{' '.join(f'{card_value_to_string(v)}{s}' for v,s in game.dealer_cards)} (합: {game.dealer_total()})", inline=False)
+            final_embed.add_field(name="플레이어 최종", value=f"{' '.join(format_card(card) for card in game.player_cards)} (합: {game.player_total()})", inline=False)
+            final_embed.add_field(name="딜러 최종", value=f"{' '.join(format_card(card) for card in game.dealer_cards)} (합: {game.dealer_total()})", inline=False)
             await msg.edit(embed=final_embed, view=None)
             
             await async_save_scores(user_id, user_scores)
