@@ -179,8 +179,6 @@ class SlotView(discord.ui.View):
                 for frame in golden_frames:
                     await self.slot_msg.edit(content=render_board_static(frame, golden_variant='initial'))
                     await asyncio.sleep(0.7)
-                    await self.slot_msg.edit(content=render_board_static(frame, golden_variant='final'))
-                    await asyncio.sleep(0.7)
                     animated_positions = [
                         (r, c)
                         for r, row in enumerate(frame)
@@ -194,10 +192,6 @@ class SlotView(discord.ui.View):
                                 golden_variant='final',
                                 animated_positions=animated_positions,
                             )
-                        )
-                        await asyncio.sleep(0.7)
-                        await self.slot_msg.edit(
-                            content=render_board_static(frame, golden_variant='final')
                         )
                         await asyncio.sleep(0.7)
 
