@@ -204,24 +204,23 @@ class SlotView(discord.ui.View):
             self.slotmsg = final_board_text
             self.slotmsg2 = result_text
 
-            if not self.auto_spin:
-                pull_button = next(
-                    (item for item in self.children
-                     if getattr(item, "custom_id", None) == "action_pull"),
-                    None,
+            pull_button = next(
+                (item for item in self.children
+                 if getattr(item, "custom_id", None) == "action_pull"),
+                None,
+            )
+            if pull_button is not None:
+                pull_button.label = "다시 돌리기"
+                pull_button.disabled = user_scores["chips"] < 1000
+            if not any(
+                getattr(item, "custom_id", None) == "share"
+                for item in self.children
+            ):
+                share_button = discord.ui.Button(
+                    custom_id="share", label="자랑하기", style=discord.ButtonStyle.primary
                 )
-                if pull_button is not None:
-                    pull_button.label = "다시 돌리기"
-                    pull_button.disabled = user_scores["chips"] < 1000
-                if not any(
-                    getattr(item, "custom_id", None) == "share"
-                    for item in self.children
-                ):
-                    share_button = discord.ui.Button(
-                        custom_id="share", label="자랑하기", style=discord.ButtonStyle.primary
-                    )
-                    share_button.callback = self.share
-                    self.add_item(share_button)
+                share_button.callback = self.share
+                self.add_item(share_button)
 
             await interaction.message.edit(content=f"<@{self.user_id}>\n{result_text}", view=self)
 
