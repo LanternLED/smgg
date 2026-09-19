@@ -135,14 +135,6 @@ class SlotView(discord.ui.View):
                 await interaction.response.defer()
             return
 
-        user_scores = await async_load_scores(self.user_id)
-        if int(user_scores.get("chips", 0) or 0) < 1000:
-            await interaction.response.send_message(
-                "다시 돌리려면 칩 1,000개가 필요합니다.",
-                ephemeral=True,
-            )
-            return
-
         self.is_rolling = True
 
         await interaction.response.defer()
@@ -151,6 +143,16 @@ class SlotView(discord.ui.View):
         await interaction.message.edit(view=self)
 
         try:
+            user_scores = await async_load_scores(self.user_id)
+            if int(user_scores.get("chips", 0) or 0) < 1000:
+                button.disabled = False
+                await interaction.message.edit(view=self)
+                await interaction.followup.send(
+                    "다시 돌리려면 칩 1,000개가 필요합니다.",
+                    ephemeral=True,
+                )
+                return
+
             engine = SlotEngine()
             engine.generate_board()
 
@@ -204,13 +206,17 @@ class SlotView(discord.ui.View):
 
             if not self.auto_spin:
                 pull_button = next(
-                    (item for item in self.children if item.custom_id == "action_pull"),
+                    (item for item in self.children
+                     if getattr(item, "custom_id", None) == "action_pull"),
                     None,
                 )
                 if pull_button is not None:
                     pull_button.label = "다시 돌리기"
                     pull_button.disabled = user_scores["chips"] < 1000
-                if not any(item.custom_id == "share" for item in self.children):
+                if not any(
+                    getattr(item, "custom_id", None) == "share"
+                    for item in self.children
+                ):
                     share_button = discord.ui.Button(
                         custom_id="share", label="자랑하기", style=discord.ButtonStyle.primary
                     )
