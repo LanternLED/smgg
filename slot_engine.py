@@ -9,15 +9,15 @@ NON_FRUITS = ['cake', 'cookie', 'bread', 'baked_potato', 'potato', 'poison']
 
 # 등장 가중치 (비과일의 확률을 높이고, 과일은 낮춰 밸런스 조절)
 SYMBOL_WEIGHTS = {
-    'cake': 4, 'cookie': 6, 'bread': 8,
-    'apple': 12, 'watermelon': 10, 'carrot': 14,
-    'baked_potato': 16, 'potato': 18, 'poison': 12
+    'cake': 3, 'cookie': 5, 'bread': 7,
+    'apple': 9, 'watermelon': 11, 'carrot': 13,
+    'baked_potato': 15, 'potato': 17, 'poison': 20
 }
 
 # 심볼 기본 가치
 SYMBOL_VALUES = {
-    'cake': 10000, 'cookie': 5000, 'bread': 2500,
-    'apple': 1200, 'watermelon': 1600, 'carrot': 800,
+    'cake': 4400, 'cookie': 3500, 'bread': 2700,
+    'apple': 1400, 'watermelon': 2000, 'carrot': 900,
     'baked_potato': 500, 'potato': 200, 'poison': 0
 }
 

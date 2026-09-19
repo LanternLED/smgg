@@ -79,7 +79,12 @@ def render_board_animated(board):
         lines.append(res)
     return "\n".join(lines)
 
-def render_board_static(board, winning_positions=None, golden_variant='final'):
+def render_board_static(
+    board,
+    winning_positions=None,
+    golden_variant='final',
+    animated_positions=None,
+):
     """최종 완전히 정지된 상태 (황금 과일, 당첨 라인 번쩍임 포함)
 
     winning_positions: [(r, c), ...] — 이 좌표들은 골든이 아닌 한 WINNING_ICONS로 렌더링됨.
@@ -87,6 +92,7 @@ def render_board_static(board, winning_positions=None, golden_variant='final'):
     golden_variant: 'initial' 또는 'final'로 황금 과일의 애니메이션 단계를 선택한다.
     """
     winning_set = set(winning_positions) if winning_positions else set()
+    animated_set = set(animated_positions) if animated_positions else set()
     lines = []
     for r in range(3):
         res = ""
@@ -94,6 +100,8 @@ def render_board_static(board, winning_positions=None, golden_variant='final'):
             if cell.is_golden and cell.symbol in GOLDEN_EMOJIS:
                 variant_map = GOLDEN_EMOJIS[cell.symbol]
                 res += variant_map.get(golden_variant, variant_map['final'])
+            elif (r, c) in animated_set:
+                res += ANIMATED_ICONS[cell.symbol][random.choice([0, 1, 2])]
             elif (r, c) in winning_set:
                 res += WINNING_ICONS[cell.symbol]
             else:
@@ -173,6 +181,25 @@ class SlotView(discord.ui.View):
                     await asyncio.sleep(0.7)
                     await self.slot_msg.edit(content=render_board_static(frame, golden_variant='final'))
                     await asyncio.sleep(0.7)
+                    animated_positions = [
+                        (r, c)
+                        for r, row in enumerate(frame)
+                        for c, cell in enumerate(row)
+                        if cell.symbol not in GOLDEN_EMOJIS
+                    ]
+                    if animated_positions:
+                        await self.slot_msg.edit(
+                            content=render_board_static(
+                                frame,
+                                golden_variant='final',
+                                animated_positions=animated_positions,
+                            )
+                        )
+                        await asyncio.sleep(0.7)
+                        await self.slot_msg.edit(
+                            content=render_board_static(frame, golden_variant='final')
+                        )
+                        await asyncio.sleep(0.7)
 
             # 단계 4: 결과 계산 후, 당첨(또는 버스트) 라인을 강조한 최종 화면 적용 (API Edit #3)
             reward, details = engine.calculate_reward()
@@ -200,6 +227,7 @@ class SlotView(discord.ui.View):
                     result_text += f"\n⚡ 부스터 소모: {bonus:,}칩"
             else:
                 result_text = "💥 꽝"
+            result_text += f"\n(보유 칩: {user_scores['chips']:,})"
 
             self.slotmsg = final_board_text
             self.slotmsg2 = result_text
