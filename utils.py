@@ -12,11 +12,11 @@ CHIP_SELL_COST = 1111      # 1시간(score) 구매에 필요한 칩
 
 # ── 부스터 ──────────────────────────────────────────────────────
 BOOSTER_BASE_GAIN = 1000    # 하루 첫 상호작용 시 기본 지급량
-BOOSTER_DECAY = 0.9         # 밀린 날짜의 감쇠율
+BOOSTER_DECAY = 0.95         # 밀린 날짜의 감쇠율
 
 # N%(미니게임 보상 부스팅 소모율) 곡선: 두 기준점을 지나는 로그 곡선
 # 튜플 구조: (부스터 보유량 기준, 소모 가능 비율 N%)
-BOOSTER_N_REF_LOW = (1000, 20)
+BOOSTER_N_REF_LOW = (1000, 10)
 BOOSTER_N_REF_HIGH = (100000, 500)
 BOOSTER_N_MAX = BOOSTER_N_REF_HIGH[1]  # 최대 비율(500%)
 
@@ -94,6 +94,22 @@ def apply_booster(user_scores: dict, chip_gain: int) -> int:
     return consumed
 
 
+def apply_level_ups(user_scores: dict) -> bool:
+    """Apply every level reached by the current EXP and report whether it changed."""
+    level = _coerce_int(user_scores.get("level"), 0)
+    exp = _coerce_int(user_scores.get("exp"), 0)
+    max_exp = int(pow(1.01, level) * 1000)
+    leveled_up = False
+    while exp >= max_exp:
+        level += 1
+        exp -= max_exp
+        max_exp = int(pow(1.01, level) * 1000)
+        leveled_up = True
+    user_scores["level"] = level
+    user_scores["exp"] = exp
+    return leveled_up
+
+
 def apply_game_reward(user_scores: dict, chip_gain: int, *, exp_rate: float = 0.1) -> int:
     """Apply a mini-game reward and optionally amplify it with booster."""
     base_chip_gain = int(chip_gain)
@@ -102,7 +118,9 @@ def apply_game_reward(user_scores: dict, chip_gain: int, *, exp_rate: float = 0.
 
     user_scores["chips"] = _coerce_int(user_scores.get("chips"), 0) + base_chip_gain
     user_scores["exp"] = _coerce_int(user_scores.get("exp"), 0) + int(base_chip_gain * exp_rate)
-    return apply_booster(user_scores, base_chip_gain)
+    bonus = apply_booster(user_scores, base_chip_gain)
+    apply_level_ups(user_scores)
+    return bonus
 
 
 def _tune_connection(conn: sqlite3.Connection) -> sqlite3.Connection:
@@ -205,18 +223,7 @@ async def async_save_scores(user_id: str, user_scores: dict):
 
 async def async_check_level(user_id: str):
     user_scores = calculate_score(await async_load_scores(user_id))
-    level = _coerce_int(user_scores.get('level'), 0)
-    exp = _coerce_int(user_scores.get('exp'), 0)
-    max_exp = int(pow(1.01, level) * 1000)
-    islevelup = False
-    while exp >= max_exp:
-        level += 1
-        islevelup = True
-        exp -= max_exp
-        max_exp = int(pow(1.01, level) * 1000)
-    if islevelup:
-        user_scores['level'] = level
-        user_scores['exp'] = exp
+    apply_level_ups(user_scores)
     user_scores['chips'] = _coerce_int(user_scores.get('chips'), 0)
     user_scores['booster'] = _coerce_int(user_scores.get('booster'), 0)
     await async_save_scores(user_id, user_scores)
@@ -280,3 +287,11 @@ async def async_grant_daily_booster(user_id: str):
             return None
         await async_save_scores(user_id, user_scores)
         return gained, user_scores
+
+
+def format_booster_gain(result) -> str:
+    """Return the user-facing message for a newly granted daily booster."""
+    if not result:
+        return ""
+    gained, user_scores = result
+    return f"⚡ 오늘의 부스터 **+{gained:,}** 획득! (보유: {user_scores['booster']:,})"

@@ -6,7 +6,7 @@ import os
 import json
 from utils import (
     async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward,
+    apply_game_reward, format_booster_gain,
 )
 
 active_blackjack_games = {}
@@ -166,7 +166,10 @@ class BlackjackCog(commands.Cog):
     async def blackjack(self, ctx, bet: int = 500):
         await async_load_deck()
         user_id = str(ctx.author.id)
-        await async_grant_daily_booster(user_id)
+        booster_result = await async_grant_daily_booster(user_id)
+        booster_notice = format_booster_gain(booster_result)
+        if booster_notice:
+            await ctx.send(f"{ctx.author.mention} {booster_notice}")
         if user_id in active_blackjack_games:
             await ctx.send("이미 진행 중인 블랙잭 게임이 있습니다.")
             return

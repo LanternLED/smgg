@@ -4,7 +4,7 @@ import random
 import asyncio
 from utils import (
     async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward,
+    apply_game_reward, format_booster_gain,
 )
 
 # 💡 슬롯머신 심볼별 등장 가중치
@@ -289,7 +289,10 @@ class MiniSlotCog(commands.Cog):
     @commands.cooldown(1, 600, commands.BucketType.user)
     async def show_slot(self, ctx):
         user_id = str(ctx.author.id)
-        await async_grant_daily_booster(user_id)
+        booster_result = await async_grant_daily_booster(user_id)
+        booster_notice = format_booster_gain(booster_result)
+        if booster_notice:
+            await ctx.send(f"{ctx.author.mention} {booster_notice}")
         user_scores = await async_check_level(user_id)
         
         if user_scores.get("chips", 0) < 50:

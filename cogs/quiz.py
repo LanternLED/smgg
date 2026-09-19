@@ -7,7 +7,7 @@ import re
 import logging
 from utils import (
     async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward,
+    apply_game_reward, format_booster_gain,
 )
 
 QUIZ_DB_PATH = "dictionary.db"
@@ -230,7 +230,10 @@ class QuizCog(commands.Cog):
     async def quiz(self, ctx):
         await ctx.message.delete()
         user_id = str(ctx.author.id)
-        await async_grant_daily_booster(user_id)
+        booster_result = await async_grant_daily_booster(user_id)
+        booster_notice = format_booster_gain(booster_result)
+        if booster_notice:
+            await ctx.send(f"{ctx.author.mention} {booster_notice}")
         if user_id in user_quiz_sessions:
             await ctx.send(f"이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
             return
@@ -241,7 +244,10 @@ class QuizCog(commands.Cog):
     async def quizinf(self, ctx):
         await ctx.message.delete()
         user_id = str(ctx.author.id)
-        await async_grant_daily_booster(user_id)
+        booster_result = await async_grant_daily_booster(user_id)
+        booster_notice = format_booster_gain(booster_result)
+        if booster_notice:
+            await ctx.send(f"{ctx.author.mention} {booster_notice}")
         if user_id in user_quiz_sessions:
             await ctx.send(f"이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
             return

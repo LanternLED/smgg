@@ -11,7 +11,7 @@ from datetime import date
 # utils.py에서 공통 함수 불러오기
 from utils import (
     async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward,
+    apply_game_reward, format_booster_gain,
 )
 
 INGREDIENTS = ["김치", "참치", "두부", "대패", "대파"]
@@ -1129,7 +1129,10 @@ class KitchenCog(commands.Cog):
     @commands.command(name="주방입장")
     async def join_kitchen(self, ctx: commands.Context) -> None:
         uid = ctx.author.id
-        await async_grant_daily_booster(str(uid))
+        booster_result = await async_grant_daily_booster(str(uid))
+        booster_notice = format_booster_gain(booster_result)
+        if booster_notice:
+            await ctx.send(f"{ctx.author.mention} {booster_notice}")
         if uid in active_kitchen_games:
             await ctx.send("이미 주방에서 요리 중입니다!", delete_after=5)
             return

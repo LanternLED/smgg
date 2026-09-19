@@ -6,7 +6,7 @@ import random
 from slot_engine import SlotEngine
 from utils import (
     async_load_scores, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, get_user_lock,
+    apply_game_reward, format_booster_gain, get_user_lock,
 )
 
 logger = logging.getLogger(__name__)
@@ -266,7 +266,10 @@ class SlotCog(commands.Cog):
 
     @commands.command(name='슬롯')
     async def show_slot_v2(self, ctx):
-        await async_grant_daily_booster(str(ctx.author.id))
+        booster_result = await async_grant_daily_booster(str(ctx.author.id))
+        booster_notice = format_booster_gain(booster_result)
+        if booster_notice:
+            await ctx.send(f"{ctx.author.mention} {booster_notice}")
         user_scores = await async_load_scores(str(ctx.author.id))
         chips = int(user_scores.get("chips", 0) or 0)
         if chips < 1000:
