@@ -193,7 +193,7 @@ class SlotView(discord.ui.View):
                                 animated_positions=event.get('animated_positions') or [],
                             )
                         )
-                        await asyncio.sleep(0.7)
+                        await asyncio.sleep(2)
                         continue
 
                     # settled: 리롤이 멈춘 최종 상태

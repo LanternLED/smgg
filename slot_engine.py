@@ -99,6 +99,9 @@ class SlotEngine:
 
         return matches
 
+    def _has_poison_match(self, board):
+        return any(match['symbol'] == 'poison' for match in self._matches_of_board(board))
+
     def trigger_golden(self):
         """
         황금 과일 연쇄 로직.
@@ -118,21 +121,32 @@ class SlotEngine:
         MAX_ITERATIONS = 20
         iterations = 0
 
+        # 독 매치가 이미 완성된 경우에는 골든 과일을 조사하지 않는다.
+        if any(match['symbol'] == 'poison' for match in self.base_match_cache):
+            return frames
+
         while True:
             iterations += 1
             if iterations > MAX_ITERATIONS:
                 break
 
-            newly_golden = []
+            golden_candidates = []
             for r in range(3):
                 for c in range(5):
                     cell = self.board[r][c]
                     if cell.symbol in FRUITS and not cell.is_golden and random.random() < 0.01:
-                        cell.is_golden = True
-                        newly_golden.append((r, c))
+                        golden_candidates.append((r, c))
 
-            if not newly_golden:
+            if not golden_candidates:
                 break
+
+            # 한 라운드에 새 후보가 여러 개면 가장 비싼 과일 하나를 우선한다.
+            golden_position = max(
+                golden_candidates,
+                key=lambda position: SYMBOL_VALUES[self.board[position[0]][position[1]].symbol],
+            )
+            golden_r, golden_c = golden_position
+            self.board[golden_r][golden_c].is_golden = True
 
             # 1) 황금 판정 시작: 골든 셀만 초기 애니메이션 상태로 보여준다.
             frames.append({
@@ -172,6 +186,10 @@ class SlotEngine:
                     'board': copy.deepcopy(self.board),
                     'animated_positions': [],
                 })
+
+            # 리롤 결과 독 매치가 완성되면 다음 황금 조사를 중단한다.
+            if self._has_poison_match(self.board):
+                break
 
         return frames
 
