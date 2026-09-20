@@ -35,12 +35,69 @@ class SlotCell:
 class SlotEngine:
     def __init__(self):
         self.board = []
+        self.base_board = []
+        self.base_match_cache = []
         self.winning_positions = []  # 마지막 calculate_reward() 결과의 당첨(또는 버스트) 좌표
 
     def generate_board(self):
         symbols = list(SYMBOL_WEIGHTS.keys())
         weights = list(SYMBOL_WEIGHTS.values())
         self.board = [[SlotCell(random.choices(symbols, weights=weights, k=1)[0]) for _ in range(5)] for _ in range(3)]
+        self.base_board = copy.deepcopy(self.board)
+        self.base_match_cache = []
+
+    def _matches_of_board(self, board):
+        matches = []
+
+        for c in range(5):
+            if board[0][c].symbol == board[1][c].symbol == board[2][c].symbol:
+                matches.append({'type': 'V3', 'symbol': board[0][c].symbol, 'cells': [(0, c), (1, c), (2, c)]})
+
+        diagonals = [
+            [(0,0), (1,1), (2,2)], [(0,1), (1,2), (2,3)], [(0,2), (1,3), (2,4)],
+            [(2,0), (1,1), (0,2)], [(2,1), (1,2), (0,3)], [(2,2), (1,3), (0,4)]
+        ]
+        for d in diagonals:
+            sym = board[d[0][0]][d[0][1]].symbol
+            if board[d[1][0]][d[1][1]].symbol == sym and board[d[2][0]][d[2][1]].symbol == sym:
+                matches.append({'type': 'D3', 'symbol': sym, 'cells': d})
+
+        for r in range(3):
+            symbols = [board[r][c].symbol for c in range(5)]
+            c = 0
+            while c < 5:
+                sym = symbols[c]
+                streak = 1
+                cells = [(r, c)]
+                next_c = c + 1
+                while next_c < 5 and symbols[next_c] == sym:
+                    streak += 1
+                    cells.append((r, next_c))
+                    next_c += 1
+
+                if streak >= 3:
+                    matches.append({'type': f'H{streak}', 'symbol': sym, 'cells': cells})
+                c = next_c
+
+        for r in range(2):
+            for c in range(4):
+                sym = board[r][c].symbol
+                cells = [(r, c), (r, c + 1), (r + 1, c), (r + 1, c + 1)]
+                if all(board[rr][cc].symbol == sym for rr, cc in cells):
+                    matches.append({'type': 'S2x2', 'symbol': sym, 'cells': cells})
+
+        for r in range(1):
+            for c in range(3):
+                sym = board[r][c].symbol
+                cells = [
+                    (r, c), (r, c + 1), (r, c + 2),
+                    (r + 1, c), (r + 1, c + 1), (r + 1, c + 2),
+                    (r + 2, c), (r + 2, c + 1), (r + 2, c + 2),
+                ]
+                if all(board[rr][cc].symbol == sym for rr, cc in cells):
+                    matches.append({'type': 'S3x3', 'symbol': sym, 'cells': cells})
+
+        return matches
 
     def trigger_golden(self):
         """
@@ -50,6 +107,9 @@ class SlotEngine:
         "한 번 더 리롤"을 부여한다. 이때 리롤 결과는 과일 중 하나여야 하며,
         특정 과일로 강제 맞추는 것이 아니라 재추첨 기회만 주는 방식이다.
         """
+        self.base_board = copy.deepcopy(self.board)
+        self.base_match_cache = self._matches_of_board(self.base_board)
+
         frames = []
         MAX_ITERATIONS = 20
         iterations = 0
@@ -89,86 +149,39 @@ class SlotEngine:
         return frames
 
     def check_lines(self):
-        matches = []
-        
-        # 1. 세로 (V3)
-        for c in range(5):
-            if self.board[0][c].symbol == self.board[1][c].symbol == self.board[2][c].symbol:
-                matches.append({'type': 'V3', 'symbol': self.board[0][c].symbol, 'cells': [(0,c), (1,c), (2,c)]})
-                
-        # 2. 대각선 (D3)
-        diagonals = [
-            [(0,0), (1,1), (2,2)], [(0,1), (1,2), (2,3)], [(0,2), (1,3), (2,4)], # 우하향
-            [(2,0), (1,1), (0,2)], [(2,1), (1,2), (0,3)], [(2,2), (1,3), (0,4)]  # 우상향
-        ]
-        for d in diagonals:
-            sym = self.board[d[0][0]][d[0][1]].symbol
-            if self.board[d[1][0]][d[1][1]].symbol == sym and self.board[d[2][0]][d[2][1]].symbol == sym:
-                matches.append({'type': 'D3', 'symbol': sym, 'cells': d})
-                
-        # 3. 가로 (H3, H4, H5)
-        for r in range(3):
-            symbols = [self.board[r][c].symbol for c in range(5)]
-            c = 0
-            while c < 5:
-                sym = symbols[c]
-                streak = 1
-                cells = [(r, c)]
-                next_c = c + 1
-                while next_c < 5 and symbols[next_c] == sym:
-                    streak += 1
-                    cells.append((r, next_c))
-                    next_c += 1
-                
-                if streak >= 3:
-                    matches.append({'type': f'H{streak}', 'symbol': sym, 'cells': cells})
-                c = next_c
-
-        return matches
+        return self._matches_of_board(self.board)
 
     def check_squares(self):
-        matches = []
-
-        # 2x2 사각형
-        for r in range(2):
-            for c in range(4):
-                sym = self.board[r][c].symbol
-                cells = [(r, c), (r, c + 1), (r + 1, c), (r + 1, c + 1)]
-                if all(self.board[rr][cc].symbol == sym for rr, cc in cells):
-                    matches.append({'type': 'S2x2', 'symbol': sym, 'cells': cells})
-
-        # 3x3 사각형
-        for r in range(1):
-            for c in range(3):
-                sym = self.board[r][c].symbol
-                cells = [
-                    (r, c), (r, c + 1), (r, c + 2),
-                    (r + 1, c), (r + 1, c + 1), (r + 1, c + 2),
-                    (r + 2, c), (r + 2, c + 1), (r + 2, c + 2),
-                ]
-                if all(self.board[rr][cc].symbol == sym for rr, cc in cells):
-                    matches.append({'type': 'S3x3', 'symbol': sym, 'cells': cells})
-
-        return matches
+        return [m for m in self._matches_of_board(self.board) if m['type'] in {'S2x2', 'S3x3'}]
 
     def calculate_reward(self):
-        matches = self.check_lines() + self.check_squares()
+        all_matches = []
+        if self.base_match_cache:
+            all_matches.extend(self.base_match_cache)
+        all_matches.extend(self.check_lines() + self.check_squares())
 
-        # 중복 인정 방식: 3, 4, 5, S2x2, S3x3를 모두 누적 계산한다.
-        # 큰 패턴을 강제로 제거하지 않고, 배수값을 조정해 밸런스를 맞춘다.
+        deduped_matches = []
+        seen = set()
+        for m in all_matches:
+            key = (m['type'], m['symbol'], tuple(sorted(m['cells'])))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped_matches.append(m)
+        matches = deduped_matches
 
-        # 1. ☠️ 독감자(Bust) 체크를 가장 먼저 수행
-        for m in matches:
-            if m['symbol'] == 'poison':
-                # 독감자 2x2 또는 라인/사각형이 하나라도 발견되면 즉시 중단.
-                self.winning_positions = list(dict.fromkeys(m['cells']))
-                return 0, ["☠️ 독!감!자! (당신은 버스트했다.)"]
+        poison_matches = [m for m in matches if m['symbol'] == 'poison']
+        if poison_matches:
+            poison_cells = []
+            for m in poison_matches:
+                poison_cells.extend(m['cells'])
+            self.winning_positions = list(dict.fromkeys(poison_cells))
+            return 0, ["☠️ 독!감!자! (당신은 버스트했다.)"]
 
-        # 2. 독감자가 없는 안전한 상태라면 정상적으로 계산
         total_reward = 0
         details = []
         winning_cells = []
-        
+
         for m in matches:
             sym = m['symbol']
             cells = m['cells']
@@ -180,7 +193,6 @@ class SlotEngine:
             mult = MULTIPLIERS.get(type_label, 1)
             line_reward = base_val * mult
 
-            # 황금 라인 잭팟
             if is_all_golden:
                 line_reward += 777777
 
@@ -188,7 +200,6 @@ class SlotEngine:
             details.append(f"{type_label} ({sym}) +{line_reward:,}")
             winning_cells.extend(cells)
 
-        # 중복 좌표 제거(순서는 유지) — 대각선/가로/세로 라인이 겹칠 수 있음
         self.winning_positions = list(dict.fromkeys(winning_cells))
 
         return total_reward, details

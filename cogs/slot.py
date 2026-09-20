@@ -215,15 +215,20 @@ class SlotView(discord.ui.View):
                 await async_save_scores(self.user_id, user_scores)
 
             if reward > 0:
-                lines_info = "\n> ".join(details)
-                result_text = f"🎉 **총 {reward:,} 칩 획득!**\n> {lines_info}"
+                if details:
+                    summary = " / ".join(details[:3])
+                    if len(details) > 3:
+                        summary += " / ..."
+                    result_text = f"🎉 **총 {reward:,} 칩 획득!** | {summary}"
+                else:
+                    result_text = f"🎉 **총 {reward:,} 칩 획득!**"
                 if bonus > 0:
-                    result_text += f"\n⚡ 부스터 소모: {bonus:,}칩"
+                    result_text += f" | ⚡ 부스터 +{bonus:,}"
             elif details:
-                result_text = "\n".join(details)
+                result_text = "☠️ 독!감!자! (당신은 버스트했다.)"
             else:
                 result_text = "💥 꽝"
-            result_text += f"\n(보유 칩: {user_scores['chips']:,})"
+            result_text += f" | 보유 칩: {user_scores['chips']:,}"
 
             self.slotmsg = final_board_text
             self.slotmsg2 = result_text
