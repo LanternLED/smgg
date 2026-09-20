@@ -219,6 +219,8 @@ class SlotView(discord.ui.View):
                 result_text = f"🎉 **총 {reward:,} 칩 획득!**\n> {lines_info}"
                 if bonus > 0:
                     result_text += f"\n⚡ 부스터 소모: {bonus:,}칩"
+            elif details:
+                result_text = "\n".join(details)
             else:
                 result_text = "💥 꽝"
             result_text += f"\n(보유 칩: {user_scores['chips']:,})"

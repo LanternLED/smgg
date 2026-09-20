@@ -9,23 +9,23 @@ NON_FRUITS = ['cake', 'cookie', 'bread', 'baked_potato', 'potato', 'poison']
 
 # 등장 가중치 (비과일의 확률을 높이고, 과일은 낮춰 밸런스 조절)
 SYMBOL_WEIGHTS = {
-    'cake': 3, 'cookie': 5, 'bread': 7,
-    'apple': 9, 'watermelon': 11, 'carrot': 13,
-    'baked_potato': 15, 'potato': 17, 'poison': 20
+    'cake': 1, 'cookie': 4, 'bread': 7,
+    'apple': 10, 'watermelon': 12, 'carrot': 14,
+    'baked_potato': 16, 'potato': 17, 'poison': 19
 }
 
 # 심볼 기본 가치
 SYMBOL_VALUES = {
-    'cake': 4400, 'cookie': 3500, 'bread': 2700,
-    'apple': 1400, 'watermelon': 2000, 'carrot': 900,
-    'baked_potato': 500, 'potato': 200, 'poison': 0
+    'cake': 5000, 'cookie': 3000, 'bread': 2000,
+    'apple': 1200, 'watermelon': 1500, 'carrot': 1000,
+    'baked_potato': 500, 'potato': 300, 'poison': 0
 }
 
 # 과일 리롤용 가중치 추출
 FRUIT_WEIGHTS = [SYMBOL_WEIGHTS[f] for f in FRUITS]
 
-# 라인 배수
-MULTIPLIERS = {'V3': 3, 'D3': 3, 'H3': 3, 'H4': 7, 'H5': 15}
+# 패턴 배수: 큰 패턴이 작은 패턴을 덮는다.
+MULTIPLIERS = {'V3': 3, 'D3': 3, 'H3': 3, 'H4': 2, 'H5': 2, 'S2x2': 3, 'S3x3': 44}
 
 class SlotCell:
     def __init__(self, symbol):
@@ -45,51 +45,47 @@ class SlotEngine:
     def trigger_golden(self):
         """
         황금 과일 연쇄 로직. 애니메이션을 위해 보드 상태(Frame)의 리스트를 반환합니다.
-        반환값이 빈 리스트면 황금이 발생하지 않은 것입니다.
+
+        황금 과일이 하나라도 등장하면, 그 황금이 아닌 칸들에 대해
+        "한 번 더 리롤"을 부여한다. 이때 리롤 결과는 과일 중 하나여야 하며,
+        특정 과일로 강제 맞추는 것이 아니라 재추첨 기회만 주는 방식이다.
         """
         frames = []
-        is_chain_active = True
-        MAX_ITERATIONS = 20  # 이론상 무한 루프 방지용 안전장치 (실제로는 거의 도달하지 않음)
+        MAX_ITERATIONS = 20
         iterations = 0
 
-        while is_chain_active:
+        while True:
             iterations += 1
             if iterations > MAX_ITERATIONS:
                 break
 
-            new_golden_triggered = False
-            
-            # 1. 황금 판정 (과일이면서 아직 황금이 아닌 칸 1%)
+            newly_golden = []
             for r in range(3):
                 for c in range(5):
                     cell = self.board[r][c]
-                    if cell.symbol in FRUITS and not cell.is_golden:
-                        if random.random() < 0.01:
-                            cell.is_golden = True
-                            new_golden_triggered = True
-            
-            if not new_golden_triggered:
-                break # 더 이상 황금이 발생하지 않으면 연쇄 종료
-            
-            # 황금 연출 프레임 저장
+                    if cell.symbol in FRUITS and not cell.is_golden and random.random() < 0.01:
+                        cell.is_golden = True
+                        newly_golden.append(cell.symbol)
+
+            if not newly_golden:
+                break
+
             frames.append(copy.deepcopy(self.board))
-            
-            # 2. 비과일 칸 리롤
-            has_rerolled = False
+
+            rerolled = False
             for r in range(3):
                 for c in range(5):
                     cell = self.board[r][c]
-                    if cell.symbol in NON_FRUITS:
-                        cell.symbol = random.choices(FRUITS, weights=FRUIT_WEIGHTS, k=1)[0]
-                        has_rerolled = True
-            
-            # 리롤 연출 프레임 저장
-            if has_rerolled:
+                    if cell.is_golden:
+                        continue
+                    cell.symbol = random.choice(FRUITS)
+                    rerolled = True
+
+            if rerolled:
                 frames.append(copy.deepcopy(self.board))
-                
-            # 참고: 첫 번째 루프 이후 모든 비과일이 과일로 변하므로, 
-            # 다음 루프부터는 새로운 과일에 대한 1% 확률 체크만 반복됩니다.
-            
+            else:
+                break
+
         return frames
 
     def check_lines(self):
@@ -127,17 +123,44 @@ class SlotEngine:
                 if streak >= 3:
                     matches.append({'type': f'H{streak}', 'symbol': sym, 'cells': cells})
                 c = next_c
-                
+
+        return matches
+
+    def check_squares(self):
+        matches = []
+
+        # 2x2 사각형
+        for r in range(2):
+            for c in range(4):
+                sym = self.board[r][c].symbol
+                cells = [(r, c), (r, c + 1), (r + 1, c), (r + 1, c + 1)]
+                if all(self.board[rr][cc].symbol == sym for rr, cc in cells):
+                    matches.append({'type': 'S2x2', 'symbol': sym, 'cells': cells})
+
+        # 3x3 사각형
+        for r in range(1):
+            for c in range(3):
+                sym = self.board[r][c].symbol
+                cells = [
+                    (r, c), (r, c + 1), (r, c + 2),
+                    (r + 1, c), (r + 1, c + 1), (r + 1, c + 2),
+                    (r + 2, c), (r + 2, c + 1), (r + 2, c + 2),
+                ]
+                if all(self.board[rr][cc].symbol == sym for rr, cc in cells):
+                    matches.append({'type': 'S3x3', 'symbol': sym, 'cells': cells})
+
         return matches
 
     def calculate_reward(self):
-        matches = self.check_lines()
-        
+        matches = self.check_lines() + self.check_squares()
+
+        # 중복 인정 방식: 3, 4, 5, S2x2, S3x3를 모두 누적 계산한다.
+        # 큰 패턴을 강제로 제거하지 않고, 배수값을 조정해 밸런스를 맞춘다.
+
         # 1. ☠️ 독감자(Bust) 체크를 가장 먼저 수행
         for m in matches:
             if m['symbol'] == 'poison':
-                # 독감자 3연속 이상 라인이 하나라도 발견되면, 즉시 모든 계산 중단 및 0칩 반환
-                # 버스트 라인도 연출상 강조할 수 있게 좌표를 남겨둔다.
+                # 독감자 2x2 또는 라인/사각형이 하나라도 발견되면 즉시 중단.
                 self.winning_positions = list(dict.fromkeys(m['cells']))
                 return 0, ["☠️ 독!감!자! (당신은 버스트했다.)"]
 
@@ -149,19 +172,20 @@ class SlotEngine:
         for m in matches:
             sym = m['symbol']
             cells = m['cells']
-            
+            type_label = m['type']
+
             is_all_golden = all(self.board[r][c].is_golden for (r, c) in cells)
-            
+
             base_val = SYMBOL_VALUES[sym]
-            mult = MULTIPLIERS[m['type']]
+            mult = MULTIPLIERS.get(type_label, 1)
             line_reward = base_val * mult
-            
+
             # 황금 라인 잭팟
             if is_all_golden:
                 line_reward += 777777
-                
+
             total_reward += line_reward
-            details.append(f"{m['type']} ({sym}) +{line_reward:,}")
+            details.append(f"{type_label} ({sym}) +{line_reward:,}")
             winning_cells.extend(cells)
 
         # 중복 좌표 제거(순서는 유지) — 대각선/가로/세로 라인이 겹칠 수 있음
