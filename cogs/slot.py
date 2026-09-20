@@ -134,7 +134,6 @@ class SlotView(discord.ui.View):
         if str(interaction.user.id) != self.user_id:
             await interaction.response.send_message("본인만 조작할 수 있습니다.", ephemeral=True)
             return
-        await async_grant_daily_booster(self.user_id)
 
         if self.is_rolling:
             # 이미 굴러가는 중 — 조용히 무시하지 않고 상호작용에는 응답해서
@@ -143,6 +142,7 @@ class SlotView(discord.ui.View):
                 await interaction.response.defer()
             return
 
+        await async_grant_daily_booster(self.user_id)
         self.is_rolling = True
 
         await interaction.response.defer()
@@ -259,25 +259,35 @@ class SlotView(discord.ui.View):
             await interaction.message.edit(content=f"<@{self.user_id}>\n{result_text}", view=self)
 
         except discord.NotFound:
-            pass
+            logger.warning("슬롯 메시지가 없어 진행을 중단했습니다 (user_id=%s)", self.user_id)
         except discord.HTTPException:
             logger.exception("슬롯 진행 중 디스코드 API 오류 발생 (user_id=%s)", self.user_id)
+            button.disabled = False
+            try:
+                await interaction.message.edit(view=self)
+            except discord.HTTPException:
+                logger.exception("슬롯 오류 후 버튼 상태 복구에 실패했습니다 (user_id=%s)", self.user_id)
             try:
                 await interaction.followup.send(
                     "슬롯 진행 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
                     ephemeral=True,
                 )
             except discord.HTTPException:
-                pass
+                logger.exception("슬롯 오류 안내 메시지 전송에 실패했습니다 (user_id=%s)", self.user_id)
         except Exception:
             logger.exception("슬롯 진행 중 예상치 못한 오류 발생 (user_id=%s)", self.user_id)
+            button.disabled = False
+            try:
+                await interaction.message.edit(view=self)
+            except discord.HTTPException:
+                logger.exception("슬롯 오류 후 버튼 상태 복구에 실패했습니다 (user_id=%s)", self.user_id)
             try:
                 await interaction.followup.send(
                     "알 수 없는 오류가 발생했습니다. 관리자에게 문의해주세요.",
                     ephemeral=True,
                 )
             except discord.HTTPException:
-                pass
+                logger.exception("슬롯 오류 안내 메시지 전송에 실패했습니다 (user_id=%s)", self.user_id)
         finally:
             self.is_rolling = False
 
