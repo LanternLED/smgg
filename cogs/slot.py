@@ -173,27 +173,32 @@ class SlotView(discord.ui.View):
             await self.slot_msg.edit(content=render_board_animated(engine.board))
             await asyncio.sleep(2.0)  # 가장 긴 3번 애니메이션 종료 대기
 
-            # 단계 3: 황금 연쇄 발생 시 미니슬롯처럼 초기/최종 두 단계로 애니메이션 표시
+            # 단계 3: 황금 연쇄 발생 시, 판정 시작 → 판정 완료 + 리롤 애니메이션 → 리롤 정지 순으로 표시
             golden_frames = engine.trigger_golden()
             if golden_frames:
-                for frame in golden_frames:
-                    await self.slot_msg.edit(content=render_board_static(frame, golden_variant='initial'))
-                    await asyncio.sleep(0.7)
-                    animated_positions = [
-                        (r, c)
-                        for r, row in enumerate(frame)
-                        for c, cell in enumerate(row)
-                        if cell.symbol not in GOLDEN_EMOJIS
-                    ]
-                    if animated_positions:
+                for event in golden_frames:
+                    board = event['board']
+                    stage = event.get('stage', 'settled')
+
+                    if stage == 'initial':
+                        await self.slot_msg.edit(content=render_board_static(board, golden_variant='initial'))
+                        await asyncio.sleep(0.7)
+                        continue
+
+                    if stage == 'rolling':
                         await self.slot_msg.edit(
                             content=render_board_static(
-                                frame,
+                                board,
                                 golden_variant='final',
-                                animated_positions=animated_positions,
+                                animated_positions=event.get('animated_positions') or [],
                             )
                         )
                         await asyncio.sleep(0.7)
+                        continue
+
+                    # settled: 리롤이 멈춘 최종 상태
+                    await self.slot_msg.edit(content=render_board_static(board, golden_variant='final'))
+                    await asyncio.sleep(0.7)
 
             # 단계 4: 결과 계산 후, 당첨(또는 버스트) 라인을 강조한 최종 화면 적용 (API Edit #3)
             reward, details = engine.calculate_reward()

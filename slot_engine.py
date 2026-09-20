@@ -101,11 +101,15 @@ class SlotEngine:
 
     def trigger_golden(self):
         """
-        황금 과일 연쇄 로직. 애니메이션을 위해 보드 상태(Frame)의 리스트를 반환합니다.
+        황금 과일 연쇄 로직.
 
-        황금 과일이 하나라도 등장하면, 그 황금이 아닌 칸들에 대해
-        "한 번 더 리롤"을 부여한다. 이때 리롤 결과는 과일 중 하나여야 하며,
-        특정 과일로 강제 맞추는 것이 아니라 재추첨 기회만 주는 방식이다.
+        각 연쇄는 아래 순서를 가지도록 프레임을 생성한다.
+        1) 황금 과일 판정 시작: 골든 셀이 표시되지만 아직 리롤 전 상태
+        2) 황금 판정 완료 + 리롤 심볼들이 돌아가기 시작
+        3) 리롤 심볼들이 멈춤
+        4) 다음 황금이 더 생기면 다시 1번부터 반복, 아니면 종료
+
+        UI는 이 프레임을 순서대로 렌더링해서 의도한 전환을 구현한다.
         """
         self.base_board = copy.deepcopy(self.board)
         self.base_match_cache = self._matches_of_board(self.base_board)
@@ -125,26 +129,49 @@ class SlotEngine:
                     cell = self.board[r][c]
                     if cell.symbol in FRUITS and not cell.is_golden and random.random() < 0.01:
                         cell.is_golden = True
-                        newly_golden.append(cell.symbol)
+                        newly_golden.append((r, c))
 
             if not newly_golden:
                 break
 
-            frames.append(copy.deepcopy(self.board))
+            # 1) 황금 판정 시작: 골든 셀만 초기 애니메이션 상태로 보여준다.
+            frames.append({
+                'stage': 'initial',
+                'board': copy.deepcopy(self.board),
+                'animated_positions': [],
+            })
 
-            rerolled = False
+            # 2) 황금 판정 완료 + 동시에 리롤될 심볼들의 스핀 시작
+            reroll_positions = []
             for r in range(3):
                 for c in range(5):
                     cell = self.board[r][c]
                     if cell.is_golden:
                         continue
                     cell.symbol = random.choice(FRUITS)
-                    rerolled = True
+                    reroll_positions.append((r, c))
 
-            if rerolled:
-                frames.append(copy.deepcopy(self.board))
+            if reroll_positions:
+                # 리롤 직후 화면은 골든은 최종 상태, 비골든 셀은 다시 돌아가는 애니메이션
+                frames.append({
+                    'stage': 'rolling',
+                    'board': copy.deepcopy(self.board),
+                    'animated_positions': reroll_positions,
+                })
+
+                # 3) 리롤 심볼들이 멈춘 최종 상태
+                frames.append({
+                    'stage': 'settled',
+                    'board': copy.deepcopy(self.board),
+                    'animated_positions': [],
+                })
             else:
-                break
+                # 리롤이 없으면 바로 판정 완료 상태로 마무리
+                frames.append({
+                    'stage': 'settled',
+                    'board': copy.deepcopy(self.board),
+                    'animated_positions': [],
+                })
 
         return frames
 
