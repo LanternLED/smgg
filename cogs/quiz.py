@@ -56,7 +56,14 @@ def get_random_word_and_definition():
 async def async_get_random_word_and_definition():
     return await asyncio.to_thread(get_random_word_and_definition)
 
-def get_wrong_choices(exclude_word, pos, num_choices=4, category=None, language_type=None):
+def get_wrong_choices(
+    exclude_word,
+    pos,
+    num_choices=4,
+    category=None,
+    language_type=None,
+    related=True,
+):
     conn = get_quiz_db_connection()
     cursor = conn.cursor()
     filtered_words = []
@@ -71,7 +78,7 @@ def get_wrong_choices(exclude_word, pos, num_choices=4, category=None, language_
                 filtered_defs[w] = re.sub(r'</?sp_no>', '', row["definition"])
 
     try:
-        if category:
+        if related and category:
             cursor.execute("""
                 SELECT w.word, s.definition FROM words w
                 JOIN senses s ON w.target_code = s.target_code
@@ -80,7 +87,7 @@ def get_wrong_choices(exclude_word, pos, num_choices=4, category=None, language_
             """, (pos, category, exclude_word, num_choices))
             add_to_choices(cursor.fetchall())
 
-        if len(filtered_words) < num_choices:
+        if related and len(filtered_words) < num_choices:
             needed = num_choices - len(filtered_words)
             placeholders = ','.join('?' for _ in filtered_words)
             query = f"""
@@ -99,9 +106,9 @@ def get_wrong_choices(exclude_word, pos, num_choices=4, category=None, language_
             cursor.execute("""
                 SELECT w.word, s.definition FROM words w
                 JOIN senses s ON w.target_code = s.target_code
-                WHERE w.target_code IN (SELECT target_code FROM quiz_index ORDER BY RANDOM() LIMIT ?)
-                AND w.word != ?
-            """, (needed * 2, exclude_word))
+                WHERE w.word != ?
+                ORDER BY RANDOM() LIMIT ?
+            """, (exclude_word, needed * 3))
             add_to_choices(cursor.fetchall())
 
         return filtered_words, filtered_defs
@@ -112,7 +119,17 @@ async def async_get_wrong_choices(*args):
     return await asyncio.to_thread(get_wrong_choices, *args)
 
 class QuizView(discord.ui.View):
-    def __init__(self, user_id, word, definition, correct_idx, choices, infinite, choice_defs):
+    def __init__(
+        self,
+        user_id,
+        word,
+        definition,
+        correct_idx,
+        choices,
+        infinite,
+        choice_defs,
+        no_answer_idx=None,
+    ):
         super().__init__(timeout=20)
         self.user_id = user_id
         self.word = word
@@ -121,11 +138,12 @@ class QuizView(discord.ui.View):
         self.choices = choices
         self.infinite = infinite
         self.choice_defs = choice_defs
+        self.no_answer_idx = no_answer_idx
         self.message = None
         self.answered = False
         
         for i, choice in enumerate(choices):
-            label = "정답 없음" if i == 4 else choice
+            label = "정답 없음" if i == no_answer_idx else choice
             self.add_item(QuizButton(label=label, index=i, view_ref=self))
 
     async def disable_all(self, correct_idx=None, answer_word=None, user_idx=None):
@@ -135,7 +153,7 @@ class QuizView(discord.ui.View):
                 if i == correct_idx: item.style = discord.ButtonStyle.success
                 elif user_idx is not None and i == user_idx: item.style = discord.ButtonStyle.danger
                 else: item.style = discord.ButtonStyle.secondary
-            if i == 4 and correct_idx == 4:
+            if i == self.no_answer_idx and correct_idx == self.no_answer_idx:
                 item.label = answer_word if answer_word else "정답 없음"
         await self.message.edit(view=self)
 
@@ -174,7 +192,7 @@ class QuizButton(discord.ui.Button):
             result_msg = f"⭕ '{view.definition}'의 뜻을 가진 단어는?\n(+{reward}{bonus_str}) (보유 칩: {user_scores['chips']})"
         else:
             user_scores["quiz_streak"] = 0
-            if self.index == 4:
+            if self.index == view.no_answer_idx:
                 result_msg = f"❌ '{view.definition}'의 뜻을 가진 단어는?\n💡 **정답이 있는 문제였습니다!**"
             else:
                 wrong_word = view.choices[self.index]
@@ -205,18 +223,52 @@ class QuizCog(commands.Cog):
                 return
             word, definition, pos, target_code, category, sense_id, language_type = word_data
 
-            wrong_choices, wrong_defs = await async_get_wrong_choices(word, pos, 4, category, language_type)
+            user_scores = await async_check_level(user_id)
+            streak = int(user_scores.get("quiz_streak", 0) or 0)
+            if streak < 5:
+                word_choice_count = 2
+            elif streak < 10:
+                word_choice_count = 3
+            elif streak < 15:
+                word_choice_count = 4
+            elif streak < 20:
+                word_choice_count = 5
+            else:
+                word_choice_count = 4
+
+            include_no_answer = streak >= 20
+            wrong_choice_count = word_choice_count - 1
+            use_random_distractors = int(user_scores.get("booster", 0) or 0) > 0
+            wrong_choices, wrong_defs = await async_get_wrong_choices(
+                word,
+                pos,
+                wrong_choice_count,
+                category,
+                language_type,
+                not use_random_distractors,
+            )
             choices = [word] + wrong_choices
             random.shuffle(choices)
-            
-            if len(choices) < 5: choices += [""] * (5 - len(choices))
-            choices = choices[:4] + ["정답 없음"]
-            correct_idx = choices.index(word) if word in choices else 4
+
+            correct_idx = choices.index(word)
+            no_answer_idx = None
+            if include_no_answer:
+                no_answer_idx = len(choices)
+                choices.append("정답 없음")
             
             choice_defs = {word: definition}
             choice_defs.update(wrong_defs)
 
-            view = QuizView(user_id, word, definition, correct_idx, choices, infinite, choice_defs)
+            view = QuizView(
+                user_id,
+                word,
+                definition,
+                correct_idx,
+                choices,
+                infinite,
+                choice_defs,
+                no_answer_idx,
+            )
             view.cog_ref = self
             await msg.edit(content=f"'{definition}'의 뜻을 가진 단어는?", view=view)
             view.message = msg

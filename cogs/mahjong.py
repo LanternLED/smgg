@@ -931,7 +931,7 @@ def mahjong_fail_msg(game: MahjongGame) -> str:
     return f"**패산 소진 — 유국**\n{hand_display}{wait_line}"
  
 def mahjong_calc_reward(yakuman_multiplier: int, remaining: int) -> int:
-    base_reward = int(yakuman_multiplier * 50 * (1 + remaining * 0.01))
+    base_reward = yakuman_multiplier * 100 + remaining
     return base_reward
  
 active_mahjong_games: dict = {}

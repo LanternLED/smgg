@@ -147,7 +147,11 @@ class SlotView(discord.ui.View):
 
         await interaction.response.defer()
 
+        button.label = "당기기"
         button.disabled = True
+        for item in self.children:
+            if isinstance(item, discord.ui.Button) and item.custom_id == "share":
+                item.disabled = False
         await interaction.message.edit(view=self)
 
         try:
@@ -156,7 +160,7 @@ class SlotView(discord.ui.View):
                 button.disabled = False
                 await interaction.message.edit(view=self)
                 await interaction.followup.send(
-                    "다시 돌리려면 칩 1,000개가 필요합니다.",
+                    "돌리려면 칩 1,000개가 필요합니다.",
                     ephemeral=True,
                 )
                 return
@@ -233,7 +237,6 @@ class SlotView(discord.ui.View):
                 result_text = "☠️ 독!감!자! (당신은 버스트했다.)"
             else:
                 result_text = "💥 꽝"
-            result_text += f" | 보유 칩: {user_scores['chips']:,}"
 
             self.slotmsg = final_board_text
             self.slotmsg2 = result_text
@@ -244,7 +247,7 @@ class SlotView(discord.ui.View):
                 None,
             )
             if pull_button is not None:
-                pull_button.label = "다시 돌리기"
+                pull_button.label = "당기기"
                 pull_button.disabled = user_scores["chips"] < 1000
             if not any(
                 getattr(item, "custom_id", None) == "share"
@@ -295,8 +298,9 @@ class SlotView(discord.ui.View):
         if str(interaction.user.id) == self.user_id:
             await async_grant_daily_booster(self.user_id)
             await interaction.response.defer()
-            await interaction.channel.send(f"{self.slotmsg}")
-            await interaction.channel.send(f"<@{int(self.user_id)}> {self.slotmsg2}")
+            await interaction.channel.send(
+                f"{self.slotmsg}\n{interaction.user.display_name} {self.slotmsg2}"
+            )
 
             for item in self.children:
                 if isinstance(item, discord.ui.Button) and item.custom_id == "share":
