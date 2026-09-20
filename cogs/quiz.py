@@ -129,6 +129,8 @@ class QuizView(discord.ui.View):
         infinite,
         choice_defs,
         no_answer_idx=None,
+        user_mention="",
+        display_name="",
     ):
         super().__init__(timeout=20)
         self.user_id = user_id
@@ -139,6 +141,8 @@ class QuizView(discord.ui.View):
         self.infinite = infinite
         self.choice_defs = choice_defs
         self.no_answer_idx = no_answer_idx
+        self.user_mention = user_mention
+        self.display_name = display_name or str(user_id)
         self.message = None
         self.answered = False
         
@@ -163,7 +167,11 @@ class QuizView(discord.ui.View):
             user_scores["quiz_streak"] = 0
             await async_save_scores(self.user_id, user_scores)
             await self.disable_all(correct_idx=self.correct_idx, answer_word=self.word)
-            await self.message.edit(content=f"'{self.definition}'의 뜻을 가진 단어는?\n(⏰ 시간 초과! 정답은 **{self.word}**입니다.)", view=self)
+            await self.message.edit(
+                content=f"{self.display_name} '{self.definition}'의 뜻을 가진 단어는?\n"
+                f"(⏰ 시간 초과! 정답은 **{self.word}**입니다.)",
+                view=self,
+            )
         if self.user_id in user_quiz_sessions:
             del user_quiz_sessions[self.user_id]
 
@@ -189,15 +197,15 @@ class QuizButton(discord.ui.Button):
             reward = -2 + user_scores["quiz_streak"] * 3
             bonus = apply_game_reward(user_scores, reward, exp_rate=0.5)
             bonus_str = f" (부스터 +{bonus})" if bonus > 0 else ""
-            result_msg = f"⭕ '{view.definition}'의 뜻을 가진 단어는?\n(+{reward}{bonus_str}) (보유 칩: {user_scores['chips']})"
+            result_msg = f"{view.display_name} ⭕ '{view.definition}'의 뜻을 가진 단어는?\n(+{reward}{bonus_str}) (보유 칩: {user_scores['chips']})"
         else:
             user_scores["quiz_streak"] = 0
             if self.index == view.no_answer_idx:
-                result_msg = f"❌ '{view.definition}'의 뜻을 가진 단어는?\n💡 **정답이 있는 문제였습니다!**"
+                result_msg = f"{view.display_name} ❌ '{view.definition}'의 뜻을 가진 단어는?\n💡 **정답이 있는 문제였습니다!**"
             else:
                 wrong_word = view.choices[self.index]
                 wrong_def = view.choice_defs.get(wrong_word, "사전 뜻을 찾을 수 없습니다.")
-                result_msg = f"❌ '{view.definition}'의 뜻을 가진 단어는?\n💡 참고: **{wrong_word}**의 뜻은 '{wrong_def}'입니다."
+                result_msg = f"{view.display_name} ❌ '{view.definition}'의 뜻을 가진 단어는?\n💡 참고: **{wrong_word}**의 뜻은 '{wrong_def}'입니다."
             view.infinite = False
             
         await async_save_scores(view.user_id, user_scores)
@@ -206,7 +214,13 @@ class QuizButton(discord.ui.Button):
         
         if view.infinite:
             next_msg = await interaction.channel.send("문제 준비중...")
-            await view.cog_ref.quiz_set(view.user_id, next_msg, infinite=True)
+            await view.cog_ref.quiz_set(
+                view.user_id,
+                next_msg,
+                infinite=True,
+                user_mention=view.user_mention,
+                display_name=view.display_name,
+            )
         elif view.user_id in user_quiz_sessions:
             del user_quiz_sessions[view.user_id]
 
@@ -214,7 +228,14 @@ class QuizCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def quiz_set(self, user_id, msg, infinite=False):
+    async def quiz_set(
+        self,
+        user_id,
+        msg,
+        infinite=False,
+        user_mention="",
+        display_name="",
+    ):
         try:
             # 터미널 대신 디스코드로 에러를 직접 쏘기 위한 안전망(Try-Except)
             word_data = await async_get_random_word_and_definition()
@@ -268,9 +289,14 @@ class QuizCog(commands.Cog):
                 infinite,
                 choice_defs,
                 no_answer_idx,
+                user_mention,
+                display_name,
             )
             view.cog_ref = self
-            await msg.edit(content=f"'{definition}'의 뜻을 가진 단어는?", view=view)
+            await msg.edit(
+                content=f"{user_mention} '{definition}'의 뜻을 가진 단어는?",
+                view=view,
+            )
             view.message = msg
             user_quiz_sessions[user_id] = view
 
@@ -290,7 +316,12 @@ class QuizCog(commands.Cog):
             await ctx.send(f"이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
             return
         msg = await ctx.send("퀴즈 준비중...")
-        await self.quiz_set(user_id, msg)
+        await self.quiz_set(
+            user_id,
+            msg,
+            user_mention=ctx.author.mention,
+            display_name=ctx.author.display_name,
+        )
 
     @commands.command(name='무한퀴즈')
     async def quizinf(self, ctx):
@@ -304,7 +335,13 @@ class QuizCog(commands.Cog):
             await ctx.send(f"이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
             return
         msg = await ctx.send("퀴즈 준비중...")
-        await self.quiz_set(user_id, msg, infinite=True)
+        await self.quiz_set(
+            user_id,
+            msg,
+            infinite=True,
+            user_mention=ctx.author.mention,
+            display_name=ctx.author.display_name,
+        )
 
 async def setup(bot):
     await bot.add_cog(QuizCog(bot))
