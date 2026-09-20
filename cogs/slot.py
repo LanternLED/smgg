@@ -228,7 +228,7 @@ class SlotView(discord.ui.View):
                     summary = " / ".join(details[:3])
                     if len(details) > 3:
                         summary += " / ..."
-                    result_text = f"🎉 **총 {reward:,} 칩 획득!** | {summary}"
+                    result_text = f"🎉 **총 {reward:,} 칩 획득!** (보유 칩: {user_scores["chips"]}) | {summary}"
                 else:
                     result_text = f"🎉 **총 {reward:,} 칩 획득!**"
                 if bonus > 0:

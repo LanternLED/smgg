@@ -14,6 +14,13 @@ QUIZ_DB_PATH = "dictionary.db"
 user_quiz_sessions = {}
 logger = logging.getLogger(__name__)
 
+def calculate_quiz_reward(streak):
+    if streak <= 10:
+        return -2 + streak * 3
+    if streak <= 20:
+        return 28 + (streak - 10) * 2
+    return 50 + (streak - 21)
+
 def get_quiz_db_connection():
     conn = sqlite3.connect(QUIZ_DB_PATH)
     conn.row_factory = sqlite3.Row  
@@ -194,7 +201,7 @@ class QuizButton(discord.ui.Button):
         
         if self.index == view.correct_idx:
             user_scores["quiz_streak"] += 1
-            reward = -2 + user_scores["quiz_streak"] * 3
+            reward = calculate_quiz_reward(user_scores["quiz_streak"])
             bonus = apply_game_reward(user_scores, reward, exp_rate=0.5)
             bonus_str = f" (부스터 +{bonus})" if bonus > 0 else ""
             result_msg = f"{view.display_name} ⭕ '{view.definition}'의 뜻을 가진 단어는?\n(+{reward}{bonus_str}) (보유 칩: {user_scores['chips']})"
