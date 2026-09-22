@@ -17,15 +17,15 @@ SYMBOL_WEIGHTS = {
 # 심볼 기본 가치
 SYMBOL_VALUES = {
     'cake': 5000, 'cookie': 3000, 'bread': 2000,
-    'apple': 1200, 'watermelon': 1500, 'carrot': 1000,
-    'baked_potato': 500, 'potato': 300, 'poison': 0
+    'apple': 1200, 'watermelon': 1600, 'carrot': 900,
+    'baked_potato': 400, 'potato': 200, 'poison': 0
 }
 
 # 과일 리롤용 가중치 추출
 FRUIT_WEIGHTS = [SYMBOL_WEIGHTS[f] for f in FRUITS]
 
 # 패턴 배수: 큰 패턴이 작은 패턴을 덮는다.
-MULTIPLIERS = {'V3': 3, 'D3': 3, 'H3': 3, 'H4': 2, 'H5': 2, 'S2x2': 3, 'S3x3': 44}
+MULTIPLIERS = {'V3': 3, 'D3': 5, 'H3': 7, 'H4': 2, 'H5': 2, 'S2x2': 3, 'S3x3': 41}
 
 class SlotCell:
     def __init__(self, symbol):
