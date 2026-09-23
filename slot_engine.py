@@ -25,7 +25,7 @@ SYMBOL_VALUES = {
 FRUIT_WEIGHTS = [SYMBOL_WEIGHTS[f] for f in FRUITS]
 
 # 패턴 배수: 큰 패턴이 작은 패턴을 덮는다.
-MULTIPLIERS = {'V3': 3, 'D3': 5, 'H3': 7, 'H4': 2, 'H5': 2, 'S2x2': 3, 'S3x3': 41}
+MULTIPLIERS = {'V3': 3, 'D3': 3, 'H3': 3, 'H4': 5, 'H5': 7, 'S2x2': 3, 'S3x3': 41}
 
 class SlotCell:
     def __init__(self, symbol):
