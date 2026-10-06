@@ -320,9 +320,6 @@ class SlotCog(commands.Cog):
             await ctx.send(f"{ctx.author.mention} {booster_notice}")
         user_scores = await async_load_scores(str(ctx.author.id))
         chips = int(user_scores.get("chips", 0) or 0)
-        if chips < 1000:
-            await ctx.send(f"{ctx.author.mention} 칩이 부족합니다. 슬롯을 시작하려면 최소 1,000칩이 필요합니다. (보유: {chips}칩)")
-            return
 
         init_board = "\n".join([SLOT_INIT * 5] * 3)
 
