@@ -11,13 +11,13 @@ NON_FRUITS = ['cake', 'cookie', 'bread', 'baked_potato', 'potato', 'poison']
 SYMBOL_WEIGHTS = {
     'cake': 1, 'cookie': 4, 'bread': 7,
     'apple': 10, 'watermelon': 12, 'carrot': 14,
-    'baked_potato': 16, 'potato': 17, 'poison': 19
+    'baked_potato': 16, 'potato': 17, 'poison': 18
 }
 
 # 심볼 기본 가치
 SYMBOL_VALUES = {
     'cake': 5000, 'cookie': 3000, 'bread': 2000,
-    'apple': 1200, 'watermelon': 1600, 'carrot': 900,
+    'apple': 1200, 'watermelon': 1500, 'carrot': 900,
     'baked_potato': 400, 'potato': 200, 'poison': 0
 }
 
