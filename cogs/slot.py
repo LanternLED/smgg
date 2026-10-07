@@ -75,7 +75,7 @@ def render_board_animated(board):
         res = ""
         for c in range(5):
             sym = board[r][c].symbol
-            res += ANIMATED_ICONS[sym][c % 3]
+            res += ANIMATED_ICONS[sym][r]
         lines.append(res)
     return "\n".join(lines)
 
