@@ -69,13 +69,13 @@ GOLDEN_EMOJIS = {
 
 # --- 렌더링 함수 ---
 def render_board_animated(board):
-    """15칸 각각에 1, 2, 3번 타이밍 GIF를 무작위로 할당"""
+    """열 순서에 따라 1, 2, 3번 타이밍 GIF를 반복해서 할당"""
     lines = []
     for r in range(3):
         res = ""
         for c in range(5):
             sym = board[r][c].symbol
-            res += ANIMATED_ICONS[sym][random.choice([0, 1, 2])]
+            res += ANIMATED_ICONS[sym][c % 3]
         lines.append(res)
     return "\n".join(lines)
 
@@ -155,16 +155,6 @@ class SlotView(discord.ui.View):
         await interaction.message.edit(view=self)
 
         try:
-            user_scores = await async_load_scores(self.user_id)
-            if int(user_scores.get("chips", 0) or 0) < 1000:
-                button.disabled = False
-                await interaction.message.edit(view=self)
-                await interaction.followup.send(
-                    "돌리려면 칩 1,000개가 필요합니다.",
-                    ephemeral=True,
-                )
-                return
-
             engine = SlotEngine()
             engine.generate_board()
 
@@ -214,7 +204,6 @@ class SlotView(discord.ui.View):
             async with get_user_lock(self.user_id):
                 user_scores = await async_load_scores(self.user_id)
                 user_scores["chips"] = int(user_scores.get("chips", 0) or 0) - 1000
-                user_scores["chips"] = max(0, user_scores["chips"])
 
                 if reward > 0:
                     bonus = apply_game_reward(user_scores, reward, exp_rate=0.02)
@@ -248,7 +237,7 @@ class SlotView(discord.ui.View):
             )
             if pull_button is not None:
                 pull_button.label = "당기기"
-                pull_button.disabled = user_scores["chips"] < 1000
+                pull_button.disabled = False
             if not any(
                 getattr(item, "custom_id", None) == "share"
                 for item in self.children
