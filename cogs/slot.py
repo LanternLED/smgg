@@ -69,12 +69,13 @@ GOLDEN_EMOJIS = {
 
 # --- 렌더링 함수 ---
 def render_board_animated(board):
-    """열 순서에 따라 1, 2, 3번 타이밍 GIF를 반복해서 할당"""
+    """행별 애니메이션 타이밍을 보드 높이에 비례해 1, 2, 3번으로 나눈다."""
     lines = []
+    row_count = len(board)
     for r, row in enumerate(board):
         res = ""
         for cell in row:
-            res += ANIMATED_ICONS[cell.symbol][r % 3]
+            res += ANIMATED_ICONS[cell.symbol][r * 3 // row_count]
         lines.append(res)
     return "\n".join(lines)
 
@@ -137,13 +138,7 @@ class SlotView(discord.ui.View):
                 pass
 
     async def _edit_board(self, board_text):
-        if self.rows * self.cols > 15:
-            await self.slot_msg.edit(
-                content=None,
-                embed=discord.Embed(description=board_text),
-            )
-        else:
-            await self.slot_msg.edit(content=board_text, embed=None)
+        await self.slot_msg.edit(content=board_text, embed=None)
 
     @discord.ui.button(custom_id="action_pull", label="당기기", style=discord.ButtonStyle.primary)
     async def pull_handle(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -309,15 +304,9 @@ class SlotView(discord.ui.View):
         if str(interaction.user.id) == self.user_id:
             await async_grant_daily_booster(self.user_id)
             await interaction.response.defer()
-            if self.rows * self.cols > 15:
-                await interaction.channel.send(
-                    content=f"{interaction.user.display_name} {self.slotmsg2}",
-                    embed=discord.Embed(description=self.slotmsg),
-                )
-            else:
-                await interaction.channel.send(
-                    f"{self.slotmsg}\n{interaction.user.display_name} {self.slotmsg2}"
-                )
+            await interaction.channel.send(
+                f"{self.slotmsg}\n{interaction.user.display_name} {self.slotmsg2}"
+            )
 
             for item in self.children:
                 if isinstance(item, discord.ui.Button) and item.custom_id == "share":
@@ -354,19 +343,19 @@ class SlotCog(commands.Cog):
         if booster_notice:
             await ctx.send(f"{ctx.author.mention} {booster_notice}")
 
-        init_board = "\n".join([SLOT_INIT * 10] * 6)
-        slot_msg = await ctx.send(embed=discord.Embed(description=init_board))
+        init_board = "\n".join([SLOT_INIT * 6] * 5)
+        slot_msg = await ctx.send(init_board)
         view = SlotView(
             ctx.author.id,
             slot_msg=slot_msg,
-            rows=6,
-            cols=10,
-            bet=9000,
+            rows=5,
+            cols=6,
+            bet=3300,
             multipliers=BIG_SLOT_MULTIPLIERS,
             allow_replay=False,
         )
         control_msg = await ctx.send(
-            f"{ctx.author.mention} **6×10 빅슬롯 | 회전당 9,000 CHIPS BET!**",
+            f"{ctx.author.mention} **5×6 빅슬롯 | 회전당 3,300 CHIPS BET!**",
             view=view,
         )
         view.control_msg = control_msg

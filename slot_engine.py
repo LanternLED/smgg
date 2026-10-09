@@ -28,8 +28,8 @@ FRUIT_WEIGHTS = [SYMBOL_WEIGHTS[f] for f in FRUITS]
 MULTIPLIERS = {'V3': 3, 'D3': 3, 'H3': 3, 'H4': 5, 'H5': 7, 'S2x2': 3, 'S3x3': 6}
 BIG_SLOT_MULTIPLIERS = {
     'V3': 3, 'D3': 3, 'H3': 3, 'S2x2': 3,
-    **{f'H{size}': 2 * size - 3 for size in range(4, 11)},
-    **{f'S{size}x{size}': 3 * (size - 1) for size in range(3, 7)},
+    **{f'H{size}': 2 * size - 3 for size in range(4, 7)},
+    **{f'S{size}x{size}': 3 * (size - 1) for size in range(3, 6)},
 }
 
 class SlotCell:
