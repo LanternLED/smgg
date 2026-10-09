@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from utils import (
     async_check_level, async_save_scores, async_load_scores, calculate_score,
     async_load_scores_all, CHIP_BUY_RATE, CHIP_SELL_COST,
-    async_grant_daily_booster,
+    async_grant_daily_booster, format_booster_gain,
 )
 
 class SystemCog(commands.Cog):
@@ -18,10 +18,11 @@ class SystemCog(commands.Cog):
         result = await async_grant_daily_booster(user_id)
         if result is None:
             return None
-        gained, user_scores = result
-        if gained > 0:
+        _, user_scores = result
+        booster_notice = format_booster_gain(result)
+        if booster_notice:
             try:
-                await ctx.send(f"{ctx.author.mention} 오늘의 부스터 +{gained} (보유: {user_scores['booster']})")
+                await ctx.send(f"{ctx.author.mention} {booster_notice}")
             except discord.HTTPException:
                 pass
         return user_scores

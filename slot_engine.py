@@ -25,7 +25,12 @@ SYMBOL_VALUES = {
 FRUIT_WEIGHTS = [SYMBOL_WEIGHTS[f] for f in FRUITS]
 
 # 패턴 배수: 큰 패턴이 작은 패턴을 덮는다.
-MULTIPLIERS = {'V3': 3, 'D3': 3, 'H3': 3, 'H4': 5, 'H5': 7, 'S2x2': 3, 'S3x3': 41}
+MULTIPLIERS = {'V3': 3, 'D3': 3, 'H3': 3, 'H4': 5, 'H5': 7, 'S2x2': 3, 'S3x3': 6}
+BIG_SLOT_MULTIPLIERS = {
+    'V3': 3, 'D3': 3, 'H3': 3, 'S2x2': 3,
+    **{f'H{size}': 2 * size - 3 for size in range(4, 11)},
+    **{f'S{size}x{size}': 3 * (size - 1) for size in range(3, 7)},
+}
 
 class SlotCell:
     def __init__(self, symbol):
@@ -33,7 +38,10 @@ class SlotCell:
         self.is_golden = False
 
 class SlotEngine:
-    def __init__(self):
+    def __init__(self, rows=3, cols=5, multipliers=None):
+        self.rows = rows
+        self.cols = cols
+        self.multipliers = dict(MULTIPLIERS if multipliers is None else multipliers)
         self.board = []
         self.base_board = []
         self.base_match_cache = []
@@ -42,35 +50,50 @@ class SlotEngine:
     def generate_board(self):
         symbols = list(SYMBOL_WEIGHTS.keys())
         weights = list(SYMBOL_WEIGHTS.values())
-        self.board = [[SlotCell(random.choices(symbols, weights=weights, k=1)[0]) for _ in range(5)] for _ in range(3)]
+        self.board = [
+            [SlotCell(random.choices(symbols, weights=weights, k=1)[0]) for _ in range(self.cols)]
+            for _ in range(self.rows)
+        ]
         self.base_board = copy.deepcopy(self.board)
         self.base_match_cache = []
 
     def _matches_of_board(self, board):
         matches = []
+        rows = len(board)
+        cols = len(board[0])
 
-        for c in range(5):
-            if board[0][c].symbol == board[1][c].symbol == board[2][c].symbol:
-                matches.append({'type': 'V3', 'symbol': board[0][c].symbol, 'cells': [(0, c), (1, c), (2, c)]})
+        for r in range(rows - 2):
+            for c in range(cols):
+                sym = board[r][c].symbol
+                if board[r + 1][c].symbol == sym == board[r + 2][c].symbol:
+                    matches.append({
+                        'type': 'V3', 'symbol': sym,
+                        'cells': [(r, c), (r + 1, c), (r + 2, c)],
+                    })
 
-        diagonals = [
-            [(0,0), (1,1), (2,2)], [(0,1), (1,2), (2,3)], [(0,2), (1,3), (2,4)],
-            [(2,0), (1,1), (0,2)], [(2,1), (1,2), (0,3)], [(2,2), (1,3), (0,4)]
-        ]
-        for d in diagonals:
-            sym = board[d[0][0]][d[0][1]].symbol
-            if board[d[1][0]][d[1][1]].symbol == sym and board[d[2][0]][d[2][1]].symbol == sym:
-                matches.append({'type': 'D3', 'symbol': sym, 'cells': d})
+        for r in range(rows - 2):
+            for c in range(cols - 2):
+                down_right = [(r + offset, c + offset) for offset in range(3)]
+                sym = board[down_right[0][0]][down_right[0][1]].symbol
+                if all(board[row][col].symbol == sym for row, col in down_right[1:]):
+                    matches.append({'type': 'D3', 'symbol': sym, 'cells': down_right})
 
-        for r in range(3):
-            symbols = [board[r][c].symbol for c in range(5)]
+        for r in range(rows - 2):
+            for c in range(cols - 2):
+                up_right = [(r + 2 - offset, c + offset) for offset in range(3)]
+                sym = board[up_right[0][0]][up_right[0][1]].symbol
+                if all(board[row][col].symbol == sym for row, col in up_right[1:]):
+                    matches.append({'type': 'D3', 'symbol': sym, 'cells': up_right})
+
+        for r in range(rows):
+            symbols = [board[r][c].symbol for c in range(cols)]
             c = 0
-            while c < 5:
+            while c < cols:
                 sym = symbols[c]
                 streak = 1
                 cells = [(r, c)]
                 next_c = c + 1
-                while next_c < 5 and symbols[next_c] == sym:
+                while next_c < cols and symbols[next_c] == sym:
                     streak += 1
                     cells.append((r, next_c))
                     next_c += 1
@@ -79,23 +102,19 @@ class SlotEngine:
                     matches.append({'type': f'H{streak}', 'symbol': sym, 'cells': cells})
                 c = next_c
 
-        for r in range(2):
-            for c in range(4):
-                sym = board[r][c].symbol
-                cells = [(r, c), (r, c + 1), (r + 1, c), (r + 1, c + 1)]
-                if all(board[rr][cc].symbol == sym for rr, cc in cells):
-                    matches.append({'type': 'S2x2', 'symbol': sym, 'cells': cells})
-
-        for r in range(1):
-            for c in range(3):
-                sym = board[r][c].symbol
-                cells = [
-                    (r, c), (r, c + 1), (r, c + 2),
-                    (r + 1, c), (r + 1, c + 1), (r + 1, c + 2),
-                    (r + 2, c), (r + 2, c + 1), (r + 2, c + 2),
-                ]
-                if all(board[rr][cc].symbol == sym for rr, cc in cells):
-                    matches.append({'type': 'S3x3', 'symbol': sym, 'cells': cells})
+        for size in range(2, min(rows, cols) + 1):
+            for r in range(rows - size + 1):
+                for c in range(cols - size + 1):
+                    cells = [
+                        (r + row_offset, c + col_offset)
+                        for row_offset in range(size)
+                        for col_offset in range(size)
+                    ]
+                    sym = board[r][c].symbol
+                    if all(board[row][col].symbol == sym for row, col in cells[1:]):
+                        matches.append({
+                            'type': f'S{size}x{size}', 'symbol': sym, 'cells': cells,
+                        })
 
         return matches
 
@@ -131,8 +150,8 @@ class SlotEngine:
                 break
 
             golden_candidates = []
-            for r in range(3):
-                for c in range(5):
+            for r in range(self.rows):
+                for c in range(self.cols):
                     cell = self.board[r][c]
                     if cell.symbol in FRUITS and not cell.is_golden and random.random() < 0.01:
                         golden_candidates.append((r, c))
@@ -157,8 +176,8 @@ class SlotEngine:
 
             # 2) 황금 판정 완료 + 동시에 리롤될 심볼들의 스핀 시작
             reroll_positions = []
-            for r in range(3):
-                for c in range(5):
+            for r in range(self.rows):
+                for c in range(self.cols):
                     cell = self.board[r][c]
                     if cell.is_golden:
                         continue
@@ -197,7 +216,7 @@ class SlotEngine:
         return self._matches_of_board(self.board)
 
     def check_squares(self):
-        return [m for m in self._matches_of_board(self.board) if m['type'] in {'S2x2', 'S3x3'}]
+        return [m for m in self._matches_of_board(self.board) if m['type'].startswith('S')]
 
     def calculate_reward(self):
         all_matches = []
@@ -235,7 +254,7 @@ class SlotEngine:
             is_all_golden = all(self.board[r][c].is_golden for (r, c) in cells)
 
             base_val = SYMBOL_VALUES[sym]
-            mult = MULTIPLIERS.get(type_label, 1)
+            mult = self.multipliers.get(type_label, 1)
             line_reward = base_val * mult
 
             if is_all_golden:

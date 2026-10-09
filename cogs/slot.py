@@ -3,7 +3,7 @@ from discord.ext import commands
 import asyncio
 import logging
 import random
-from slot_engine import SlotEngine
+from slot_engine import BIG_SLOT_MULTIPLIERS, SlotEngine
 from utils import (
     async_load_scores, async_save_scores, async_grant_daily_booster,
     apply_game_reward, format_booster_gain, get_user_lock,
@@ -71,11 +71,10 @@ GOLDEN_EMOJIS = {
 def render_board_animated(board):
     """열 순서에 따라 1, 2, 3번 타이밍 GIF를 반복해서 할당"""
     lines = []
-    for r in range(3):
+    for r, row in enumerate(board):
         res = ""
-        for c in range(5):
-            sym = board[r][c].symbol
-            res += ANIMATED_ICONS[sym][r]
+        for cell in row:
+            res += ANIMATED_ICONS[cell.symbol][r % 3]
         lines.append(res)
     return "\n".join(lines)
 
@@ -94,9 +93,9 @@ def render_board_static(
     winning_set = set(winning_positions) if winning_positions else set()
     animated_set = set(animated_positions) if animated_positions else set()
     lines = []
-    for r in range(3):
+    for r, row in enumerate(board):
         res = ""
-        for c, cell in enumerate(board[r]):
+        for c, cell in enumerate(row):
             if cell.is_golden and cell.symbol in GOLDEN_EMOJIS:
                 variant_map = GOLDEN_EMOJIS[cell.symbol]
                 res += variant_map.get(golden_variant, variant_map['final'])
@@ -111,10 +110,18 @@ def render_board_static(
 
 
 class SlotView(discord.ui.View):
-    def __init__(self, user_id, slot_msg=None):
+    def __init__(
+        self, user_id, slot_msg=None, *, rows=3, cols=5, bet=1000,
+        multipliers=None, allow_replay=True,
+    ):
         super().__init__(timeout=600)
         self.user_id = str(user_id)
         self.slot_msg = slot_msg  # 점보지용 대형 보드 메시지
+        self.rows = rows
+        self.cols = cols
+        self.bet = bet
+        self.multipliers = multipliers
+        self.allow_replay = allow_replay
         self.is_rolling = False
         self.slotmsg = ""
         self.slotmsg2 = ""
@@ -129,6 +136,15 @@ class SlotView(discord.ui.View):
             except discord.HTTPException:
                 pass
 
+    async def _edit_board(self, board_text):
+        if self.rows * self.cols > 15:
+            await self.slot_msg.edit(
+                content=None,
+                embed=discord.Embed(description=board_text),
+            )
+        else:
+            await self.slot_msg.edit(content=board_text, embed=None)
+
     @discord.ui.button(custom_id="action_pull", label="당기기", style=discord.ButtonStyle.primary)
     async def pull_handle(self, interaction: discord.Interaction, button: discord.ui.Button):
         if str(interaction.user.id) != self.user_id:
@@ -142,7 +158,6 @@ class SlotView(discord.ui.View):
                 await interaction.response.defer()
             return
 
-        await async_grant_daily_booster(self.user_id)
         self.is_rolling = True
 
         await interaction.response.defer()
@@ -155,16 +170,21 @@ class SlotView(discord.ui.View):
         await interaction.message.edit(view=self)
 
         try:
-            engine = SlotEngine()
+            await async_grant_daily_booster(self.user_id)
+            engine = SlotEngine(
+                rows=self.rows,
+                cols=self.cols,
+                multipliers=self.multipliers,
+            )
             engine.generate_board()
 
             # 단계 1: 전체 슬롯이 팽팽 돌기 시작 (API Edit #1)
-            rolling_board = "\n".join([SLOT_ROLLING * 5] * 3)
-            await self.slot_msg.edit(content=rolling_board)
+            rolling_board = "\n".join([SLOT_ROLLING * self.cols] * self.rows)
+            await self._edit_board(rolling_board)
             await asyncio.sleep(1.0)
 
             # 단계 2: 심볼별로 1~3번 타임차가 적용된 애니메이션으로 전환 (API Edit #2)
-            await self.slot_msg.edit(content=render_board_animated(engine.board))
+            await self._edit_board(render_board_animated(engine.board))
             await asyncio.sleep(2.0)  # 가장 긴 3번 애니메이션 종료 대기
 
             # 단계 3: 황금 연쇄 발생 시, 판정 시작 → 판정 완료 + 리롤 애니메이션 → 리롤 정지 순으로 표시
@@ -175,13 +195,13 @@ class SlotView(discord.ui.View):
                     stage = event.get('stage', 'settled')
 
                     if stage == 'initial':
-                        await self.slot_msg.edit(content=render_board_static(board, golden_variant='initial'))
+                        await self._edit_board(render_board_static(board, golden_variant='initial'))
                         await asyncio.sleep(0.7)
                         continue
 
                     if stage == 'rolling':
-                        await self.slot_msg.edit(
-                            content=render_board_static(
+                        await self._edit_board(
+                            render_board_static(
                                 board,
                                 golden_variant='final',
                                 animated_positions=event.get('animated_positions') or [],
@@ -191,25 +211,25 @@ class SlotView(discord.ui.View):
                         continue
 
                     # settled: 리롤이 멈춘 최종 상태
-                    await self.slot_msg.edit(content=render_board_static(board, golden_variant='final'))
+                    await self._edit_board(render_board_static(board, golden_variant='final'))
                     await asyncio.sleep(0.7)
 
             # 단계 4: 결과 계산 후, 당첨(또는 버스트) 라인을 강조한 최종 화면 적용 (API Edit #3)
             reward, details = engine.calculate_reward()
             final_board_text = render_board_static(engine.board, winning_positions=engine.winning_positions)
-            await self.slot_msg.edit(content=final_board_text)
+            await self._edit_board(final_board_text)
 
             # load → 수정 → save 구간은 다른 커맨드(예: 칩판매)와
             # 동시에 실행되면 서로의 변경을 덮어쓸 수 있으므로 락으로 보호한다.
             async with get_user_lock(self.user_id):
                 user_scores = await async_load_scores(self.user_id)
-                user_scores["chips"] = int(user_scores.get("chips", 0) or 0) - 1000
+                user_scores["chips"] = int(user_scores.get("chips", 0) or 0) - self.bet
 
                 if reward > 0:
                     bonus = apply_game_reward(user_scores, reward, exp_rate=0.02)
                 else:
                     bonus = 0
-
+                await async_save_scores(self.user_id, user_scores)
                 await async_save_scores(self.user_id, user_scores)
 
             if reward > 0:
@@ -217,7 +237,7 @@ class SlotView(discord.ui.View):
                     summary = " / ".join(details[:3])
                     if len(details) > 3:
                         summary += " / ..."
-                    result_text = f"🎉 **총 {reward:,} 칩 획득!** (보유 칩: {user_scores["chips"]}) | {summary}"
+                    result_text = f"🎉 **총 {reward:,} 칩 획득!** (보유 칩: {user_scores['chips']}) | {summary}"
                 else:
                     result_text = f"🎉 **총 {reward:,} 칩 획득!**"
                 if bonus > 0:
@@ -235,10 +255,12 @@ class SlotView(discord.ui.View):
                  if getattr(item, "custom_id", None) == "action_pull"),
                 None,
             )
-            if pull_button is not None:
+            if self.allow_replay and pull_button is not None:
                 pull_button.label = "당기기"
                 pull_button.disabled = False
-            if not any(
+            elif pull_button is not None:
+                self.remove_item(pull_button)
+            if self.allow_replay and not any(
                 getattr(item, "custom_id", None) == "share"
                 for item in self.children
             ):
@@ -287,9 +309,15 @@ class SlotView(discord.ui.View):
         if str(interaction.user.id) == self.user_id:
             await async_grant_daily_booster(self.user_id)
             await interaction.response.defer()
-            await interaction.channel.send(
-                f"{self.slotmsg}\n{interaction.user.display_name} {self.slotmsg2}"
-            )
+            if self.rows * self.cols > 15:
+                await interaction.channel.send(
+                    content=f"{interaction.user.display_name} {self.slotmsg2}",
+                    embed=discord.Embed(description=self.slotmsg),
+                )
+            else:
+                await interaction.channel.send(
+                    f"{self.slotmsg}\n{interaction.user.display_name} {self.slotmsg2}"
+                )
 
             for item in self.children:
                 if isinstance(item, discord.ui.Button) and item.custom_id == "share":
@@ -302,14 +330,12 @@ class SlotCog(commands.Cog):
         self.bot = bot
 
     @commands.command(name='슬롯')
+    @commands.cooldown(1, 600, commands.BucketType.user)
     async def show_slot_v2(self, ctx):
         booster_result = await async_grant_daily_booster(str(ctx.author.id))
         booster_notice = format_booster_gain(booster_result)
         if booster_notice:
             await ctx.send(f"{ctx.author.mention} {booster_notice}")
-        user_scores = await async_load_scores(str(ctx.author.id))
-        chips = int(user_scores.get("chips", 0) or 0)
-
         init_board = "\n".join([SLOT_INIT * 5] * 3)
 
         # 1. 텍스트 없는 pure 이모지 메시지 (3x5 점보지 크기)
@@ -320,21 +346,44 @@ class SlotCog(commands.Cog):
         control_msg = await ctx.send(f"{ctx.author.mention} **1,000 CHIPS BET!**", view=view)
         view.control_msg = control_msg
 
+    @commands.command(name='빅슬롯')
+    @commands.cooldown(1, 60, commands.BucketType.user)
+    async def show_big_slot(self, ctx):
+        booster_result = await async_grant_daily_booster(str(ctx.author.id))
+        booster_notice = format_booster_gain(booster_result)
+        if booster_notice:
+            await ctx.send(f"{ctx.author.mention} {booster_notice}")
+
+        init_board = "\n".join([SLOT_INIT * 10] * 6)
+        slot_msg = await ctx.send(embed=discord.Embed(description=init_board))
+        view = SlotView(
+            ctx.author.id,
+            slot_msg=slot_msg,
+            rows=6,
+            cols=10,
+            bet=9000,
+            multipliers=BIG_SLOT_MULTIPLIERS,
+            allow_replay=False,
+        )
+        control_msg = await ctx.send(
+            f"{ctx.author.mention} **6×10 빅슬롯 | 회전당 9,000 CHIPS BET!**",
+            view=view,
+        )
+        view.control_msg = control_msg
+
     @show_slot_v2.error
     async def show_slot_error(self, ctx, error):
         if isinstance(error, commands.CommandOnCooldown):
-            minutes = int(error.retry_after // 60)
-            seconds = int(error.retry_after % 60)
-            message = f"⚠️ ({minutes}분 {seconds}초 후 가능)"
-            try:
-                await ctx.send(message, delete_after=5, ephemeral=True)
-            except TypeError:
-                try:
-                    await ctx.send(message, delete_after=5)
-                except discord.Forbidden:
-                    pass
-            except discord.Forbidden:
-                pass
+            await ctx.send(
+                f"슬롯은 {round(error.retry_after)}초 후에 다시 이용할 수 있습니다."
+            )
+
+    @show_big_slot.error
+    async def show_big_slot_error(self, ctx, error):
+        if isinstance(error, commands.CommandOnCooldown):
+            await ctx.send(
+                f"빅슬롯은 {round(error.retry_after)}초 후에 다시 이용할 수 있습니다."
+            )
 
 
 async def setup(bot):
