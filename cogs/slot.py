@@ -355,7 +355,7 @@ class SlotCog(commands.Cog):
             allow_replay=False,
         )
         control_msg = await ctx.send(
-            f"{ctx.author.mention} **5×6 빅슬롯 | 회전당 3,300 CHIPS BET!**",
+            f"{ctx.author.mention} **3,300 CHIPS BET!**",
             view=view,
         )
         view.control_msg = control_msg
