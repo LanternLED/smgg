@@ -113,7 +113,7 @@ def render_board_static(
 class SlotView(discord.ui.View):
     def __init__(
         self, user_id, slot_msg=None, *, rows=3, cols=5, bet=1000,
-        allow_replay=True,
+        allow_replay=True, cooldown_end_timestamp=None,
     ):
         super().__init__(timeout=600)
         self.user_id = str(user_id)
@@ -122,6 +122,7 @@ class SlotView(discord.ui.View):
         self.cols = cols
         self.bet = bet
         self.allow_replay = allow_replay
+        self.cooldown_end_timestamp = cooldown_end_timestamp
         self.is_rolling = False
         self.slotmsg = ""
         self.slotmsg2 = ""
@@ -243,6 +244,12 @@ class SlotView(discord.ui.View):
             self.slotmsg = final_board_text
             self.slotmsg2 = result_text
 
+            cooldown_notice = ""
+            if self.cooldown_end_timestamp is not None:
+                cooldown_notice = (
+                    f"\n⏳ 다음 빅슬롯: <t:{self.cooldown_end_timestamp}:R>"
+                )
+
             pull_button = next(
                 (item for item in self.children
                  if getattr(item, "custom_id", None) == "action_pull"),
@@ -263,7 +270,10 @@ class SlotView(discord.ui.View):
                 share_button.callback = self.share
                 self.add_item(share_button)
 
-            await interaction.message.edit(content=f"<@{self.user_id}>\n{result_text}", view=self)
+            await interaction.message.edit(
+                content=f"<@{self.user_id}>\n{result_text}{cooldown_notice}",
+                view=self,
+            )
 
         except discord.NotFound:
             logger.warning("슬롯 메시지가 없어 진행을 중단했습니다 (user_id=%s)", self.user_id)
@@ -350,6 +360,7 @@ class SlotCog(commands.Cog):
             cols=6,
             bet=3500,
             allow_replay=False,
+            cooldown_end_timestamp=int(ctx.message.created_at.timestamp()) + 60,
         )
         control_msg = await ctx.send(
             f"{ctx.author.mention} **3,500 CHIPS BET!**",
