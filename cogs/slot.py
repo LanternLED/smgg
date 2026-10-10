@@ -3,7 +3,7 @@ from discord.ext import commands
 import asyncio
 import logging
 import random
-from slot_engine import BIG_SLOT_MULTIPLIERS, SlotEngine
+from slot_engine import SlotEngine
 from utils import (
     async_load_scores, async_save_scores, async_grant_daily_booster,
     apply_game_reward, format_booster_gain, get_user_lock,
@@ -113,7 +113,7 @@ def render_board_static(
 class SlotView(discord.ui.View):
     def __init__(
         self, user_id, slot_msg=None, *, rows=3, cols=5, bet=1000,
-        multipliers=None, allow_replay=True,
+        allow_replay=True,
     ):
         super().__init__(timeout=600)
         self.user_id = str(user_id)
@@ -121,7 +121,6 @@ class SlotView(discord.ui.View):
         self.rows = rows
         self.cols = cols
         self.bet = bet
-        self.multipliers = multipliers
         self.allow_replay = allow_replay
         self.is_rolling = False
         self.slotmsg = ""
@@ -169,7 +168,6 @@ class SlotView(discord.ui.View):
             engine = SlotEngine(
                 rows=self.rows,
                 cols=self.cols,
-                multipliers=self.multipliers,
             )
             engine.generate_board()
 
@@ -351,7 +349,6 @@ class SlotCog(commands.Cog):
             rows=5,
             cols=6,
             bet=3300,
-            multipliers=BIG_SLOT_MULTIPLIERS,
             allow_replay=False,
         )
         control_msg = await ctx.send(
@@ -364,14 +361,14 @@ class SlotCog(commands.Cog):
     async def show_slot_error(self, ctx, error):
         if isinstance(error, commands.CommandOnCooldown):
             await ctx.send(
-                f"슬롯은 {round(error.retry_after)}초 후에 다시 이용할 수 있습니다."
+                f"동작 그만. 밑장빼기냐? (내 손목을 지키기 위해 {round(error.retry_after, 0)}초 후에 다시 시도하자.)"
             )
 
     @show_big_slot.error
     async def show_big_slot_error(self, ctx, error):
         if isinstance(error, commands.CommandOnCooldown):
             await ctx.send(
-                f"빅슬롯은 {round(error.retry_after)}초 후에 다시 이용할 수 있습니다."
+                f"동작 그만. 밑장빼기냐? (내 손목을 지키기 위해 {round(error.retry_after, 0)}초 후에 다시 시도하자.)"
             )
 
 
