@@ -10,16 +10,16 @@ NON_FRUITS = ['cake', 'cookie', 'bread', 'baked_potato', 'potato', 'poison']
 
 # 등장 가중치 (비과일의 확률을 높이고, 과일은 낮춰 밸런스 조절)
 SYMBOL_WEIGHTS = {
-    'cake': 2, 'cookie': 4, 'bread': 6,
-    'watermelon': 8, 'apple': 10, 'carrot': 12,
-    'baked_potato': 15, 'potato': 20, 'poison': 25
+    'cake': 3, 'cookie': 5, 'bread': 7,
+    'watermelon': 9, 'apple': 11, 'carrot': 13,
+    'baked_potato': 15, 'potato': 17, 'poison': 20
 }
 
 # 심볼 기본 가치
 SYMBOL_VALUES = {
-    'cake': 7000, 'cookie': 5000, 'bread': 3000,
-    'watermelon': 2000, 'apple': 1600, 'carrot': 1200,
-    'baked_potato': 800, 'potato': 600, 'poison': 0
+    'cake': 5000, 'cookie': 3000, 'bread': 2000,
+    'watermelon': 1600, 'apple': 1300, 'carrot': 1000,
+    'baked_potato': 700, 'potato': 300, 'poison': 0
 }
 
 # 과일 리롤용 가중치 추출
@@ -34,11 +34,13 @@ SIMULATION_SYMBOL_VALUES = tuple(
     SYMBOL_VALUES[symbol] for symbol in SIMULATION_SYMBOLS
 )
 SIMULATION_POISON_ID = SIMULATION_SYMBOL_IDS["poison"]
+GOLDEN_TRIGGER_CHANCE = 0.01
 
 # 패턴 배수: 두 슬롯이 같은 패턴에는 같은 배율을 사용한다.
 MULTIPLIERS = {
     'V3': 3, 'D3': 3, 'H3': 3, 'S2x2': 3,
-    'H4': 5, 'H5': 7, 'H6': 9,
+    'V4': 5, 'D4': 5, 'H4': 5,
+    'V5': 7, 'D5': 7, 'H5': 7, 'H6': 9,
     'S3x3': 6, 'S4x4': 9, 'S5x5': 12,
 }
 
@@ -75,28 +77,36 @@ class SlotEngine:
         rows = len(board)
         cols = len(board[0])
 
-        for r in range(rows - 2):
-            for c in range(cols):
-                sym = board[r][c].symbol
-                if board[r + 1][c].symbol == sym == board[r + 2][c].symbol:
-                    matches.append({
-                        'type': 'V3', 'symbol': sym,
-                        'cells': [(r, c), (r + 1, c), (r + 2, c)],
-                    })
+        for row_step, col_step, pattern_prefix in ((1, 0, 'V'), (1, 1, 'D'), (1, -1, 'D')):
+            for r in range(rows):
+                for c in range(cols):
+                    previous_row = r - row_step
+                    previous_col = c - col_step
+                    if (
+                        0 <= previous_row < rows
+                        and 0 <= previous_col < cols
+                        and board[previous_row][previous_col].symbol == board[r][c].symbol
+                    ):
+                        continue
 
-        for r in range(rows - 2):
-            for c in range(cols - 2):
-                down_right = [(r + offset, c + offset) for offset in range(3)]
-                sym = board[down_right[0][0]][down_right[0][1]].symbol
-                if all(board[row][col].symbol == sym for row, col in down_right[1:]):
-                    matches.append({'type': 'D3', 'symbol': sym, 'cells': down_right})
+                    sym = board[r][c].symbol
+                    cells = []
+                    current_row, current_col = r, c
+                    while (
+                        0 <= current_row < rows
+                        and 0 <= current_col < cols
+                        and board[current_row][current_col].symbol == sym
+                    ):
+                        cells.append((current_row, current_col))
+                        current_row += row_step
+                        current_col += col_step
 
-        for r in range(rows - 2):
-            for c in range(cols - 2):
-                up_right = [(r + 2 - offset, c + offset) for offset in range(3)]
-                sym = board[up_right[0][0]][up_right[0][1]].symbol
-                if all(board[row][col].symbol == sym for row, col in up_right[1:]):
-                    matches.append({'type': 'D3', 'symbol': sym, 'cells': up_right})
+                    if len(cells) >= 3:
+                        matches.append({
+                            'type': f'{pattern_prefix}{len(cells)}',
+                            'symbol': sym,
+                            'cells': cells,
+                        })
 
         for r in range(rows):
             symbols = [board[r][c].symbol for c in range(cols)]
@@ -181,7 +191,11 @@ class SlotEngine:
             for r in range(self.rows):
                 for c in range(self.cols):
                     cell = self.board[r][c]
-                    if cell.symbol in FRUITS and not cell.is_golden and random.random() < 0.01:
+                    if (
+                        cell.symbol in FRUITS
+                        and not cell.is_golden
+                        and random.random() < GOLDEN_TRIGGER_CHANCE
+                    ):
                         golden_candidates.append((r, c))
 
             if not golden_candidates:
@@ -361,42 +375,34 @@ def _simulation_matches(board):
                 row_symbol_masks[row].get(symbol, 0) | (1 << col)
             )
 
-    for row in range(rows - 2):
-        for col in range(cols):
-            symbol = board[row][col]
-            if board[row + 1][col] == symbol == board[row + 2][col]:
-                cells = (
-                    (1 << (row * cols + col))
-                    | (1 << ((row + 1) * cols + col))
-                    | (1 << ((row + 2) * cols + col))
-                )
-                matches.append(("V3", symbol, cells))
+    for row_step, col_step, pattern_prefix in ((1, 0, "V"), (1, 1, "D"), (1, -1, "D")):
+        for row in range(rows):
+            for col in range(cols):
+                previous_row = row - row_step
+                previous_col = col - col_step
+                if (
+                    0 <= previous_row < rows
+                    and 0 <= previous_col < cols
+                    and board[previous_row][previous_col] == board[row][col]
+                ):
+                    continue
 
-    for row in range(rows - 2):
-        for col in range(cols - 2):
-            symbol = board[row][col]
-            if (
-                board[row + 1][col + 1] == symbol
-                and board[row + 2][col + 2] == symbol
-            ):
-                cells = (
-                    (1 << (row * cols + col))
-                    | (1 << ((row + 1) * cols + col + 1))
-                    | (1 << ((row + 2) * cols + col + 2))
-                )
-                matches.append(("D3", symbol, cells))
+                symbol = board[row][col]
+                cells = 0
+                length = 0
+                current_row, current_col = row, col
+                while (
+                    0 <= current_row < rows
+                    and 0 <= current_col < cols
+                    and board[current_row][current_col] == symbol
+                ):
+                    cells |= 1 << (current_row * cols + current_col)
+                    length += 1
+                    current_row += row_step
+                    current_col += col_step
 
-            symbol = board[row + 2][col]
-            if (
-                board[row + 1][col + 1] == symbol
-                and board[row][col + 2] == symbol
-            ):
-                cells = (
-                    (1 << ((row + 2) * cols + col))
-                    | (1 << ((row + 1) * cols + col + 1))
-                    | (1 << (row * cols + col + 2))
-                )
-                matches.append(("D3", symbol, cells))
+                if length >= 3:
+                    matches.append((f"{pattern_prefix}{length}", symbol, cells))
 
     for row in range(rows):
         col = 0
@@ -457,7 +463,7 @@ def _simulate_spin_reward(rows: int, cols: int, multipliers: dict) -> tuple[int,
                     if (
                         symbol in SIMULATION_FRUIT_IDS
                         and not golden_mask & (1 << (row * cols + col))
-                        and random.random() < 0.01
+                        and random.random() < GOLDEN_TRIGGER_CHANCE
                     ):
                         value = SIMULATION_SYMBOL_VALUES[symbol]
                         if value > golden_candidate_value:
@@ -555,7 +561,6 @@ def _simulate_board(
                 flush=True,
             )
 
-    low, high = _confidence_interval(rewards)
     print(f"\n{name} 최종 결과")
     _print_estimate("평균 지급액", rewards)
     print(f"  순기대값(평균 지급액-비용): {rewards.mean - cost:+,.2f}칩/회")
@@ -569,13 +574,13 @@ def _run_ev_simulation() -> None:
     spins = 1_000_000
     configurations = {
         "1": ("일반 슬롯", 3, 5, 1_000),
-        "2": ("빅슬롯", 5, 6, 3_300),
+        "2": ("빅슬롯", 5, 6, 3_500),
         "3": None,
     }
     print(
         "기대값을 시뮬레이션할 슬롯을 선택하세요:\n"
         "1. 일반 슬롯 (3x5, 1,000칩)\n"
-        "2. 빅슬롯 (5x6, 3,300칩)\n"
+        "2. 빅슬롯 (5x6, 3,500칩)\n"
         "3. 둘 다"
     )
     choice = input("선택 (1/2/3): ").strip()

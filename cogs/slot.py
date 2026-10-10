@@ -348,11 +348,11 @@ class SlotCog(commands.Cog):
             slot_msg=slot_msg,
             rows=5,
             cols=6,
-            bet=3300,
+            bet=3500,
             allow_replay=False,
         )
         control_msg = await ctx.send(
-            f"{ctx.author.mention} **3,300 CHIPS BET!**",
+            f"{ctx.author.mention} **3,500 CHIPS BET!**",
             view=view,
         )
         view.control_msg = control_msg
