@@ -31,20 +31,36 @@ typing_escape_events: dict[str, asyncio.Event] = {}
 def ensure_typing_column():
     conn = get_db_connection()
     try:
+        conn.execute("BEGIN IMMEDIATE")
         columns = conn.execute("PRAGMA table_info(user)").fetchall()
+        column_names = {column["name"] for column in columns}
+
+        accuracy_columns = (
+            "typing_accuracy_sum",
+            "typing_accuracy_count",
+        )
+        if (
+            sqlite3.sqlite_version_info < (3, 35, 0)
+            and column_names.intersection(accuracy_columns)
+        ):
+            raise RuntimeError(
+                "typing accuracy column migration requires SQLite 3.35.0 or newer "
+                f"(found {sqlite3.sqlite_version})."
+            )
+
         if not any(column["name"] == "typing" for column in columns):
             conn.execute(
                 "ALTER TABLE user ADD COLUMN typing INTEGER NOT NULL DEFAULT 0"
             )
-        if not any(column["name"] == "typing_accuracy_sum" for column in columns):
-            conn.execute(
-                "ALTER TABLE user ADD COLUMN typing_accuracy_sum REAL NOT NULL DEFAULT 0"
-            )
-        if not any(column["name"] == "typing_accuracy_count" for column in columns):
-            conn.execute(
-                "ALTER TABLE user ADD COLUMN typing_accuracy_count INTEGER NOT NULL DEFAULT 0"
-            )
+
+        for column in accuracy_columns:
+            if column in column_names:
+                conn.execute(f'ALTER TABLE user DROP COLUMN "{column}"')
+
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -191,6 +207,8 @@ class TypingGameCog(commands.Cog):
                 )
 
             example_offset = 0
+            accuracy_sum = 0.0
+            accuracy_count = 0
             while True:
                 if escape_event is not None and escape_event.is_set():
                     content = "\n\n".join(
@@ -306,15 +324,10 @@ class TypingGameCog(commands.Cog):
                 async with get_user_lock(user_id):
                     user_scores = await async_check_level(user_id)
                     user_scores["typing"] = int(user_scores.get("typing", 0) or 0) + 1
-                    accuracy_sum = float(
-                        user_scores.get("typing_accuracy_sum", 0) or 0
-                    ) + accuracy
-                    accuracy_count = int(
-                        user_scores.get("typing_accuracy_count", 0) or 0
-                    ) + 1
-                    user_scores["typing_accuracy_sum"] = accuracy_sum
-                    user_scores["typing_accuracy_count"] = accuracy_count
-                    average_accuracy = accuracy_sum / accuracy_count
+                    if infinite:
+                        accuracy_sum += accuracy
+                        accuracy_count += 1
+                        average_accuracy = accuracy_sum / accuracy_count
                     booster_bonus = apply_game_reward(
                         user_scores,
                         score,
@@ -327,9 +340,11 @@ class TypingGameCog(commands.Cog):
                     cycle_progress = len(self.example_ids)
                 cycle_count = (user_scores["typing"] - 1) // len(self.example_ids) + 1
                 bonus_notice = f" (부스터 +{booster_bonus})" if booster_bonus > 0 else ""
+                accuracy_result = f"이번 문장 정확도 **{accuracy:.1%}**"
+                if infinite:
+                    accuracy_result += f" · 세션 평균 정확도 **{average_accuracy:.1%}**"
                 last_result = (
-                    f"{ctx.author.mention} 이번 문장 정확도 **{accuracy:.1%}** · "
-                    f"평균 정확도 **{average_accuracy:.1%}** "
+                    f"{ctx.author.mention} {accuracy_result} "
                     f"(자모 편집 거리 {distance}) — **+{score}점**{bonus_notice}\n"
                     f"진행도: {cycle_progress:,}/{len(self.example_ids):,} "
                     f"(전체 {user_scores['typing']:,}회, {cycle_count}회차) · "

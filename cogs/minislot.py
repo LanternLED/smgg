@@ -83,34 +83,13 @@ class SlotView(discord.ui.View):
         await asyncio.sleep(2)
 
         self.bet, is_sloto = self.calculate_reward(slot_values)
+        slot_icons = self._result_symbol_icons(slot_values, is_sloto)
 
         if is_sloto:
-            slot_icons = [self.stop_symbol_icon(symbol, 0) for index, symbol in enumerate(slot_values)]
             if slot_values[0] == slot_values[1] and slot_values[0] == slot_values[2]:
                 self.slotmsg2 += "**잭팟!!!**"
                 if slot_values[0] == "poison":
                     self.slotmsg2 += " ...아. "
-
-        else:
-            if slot_values.count(slot_values[0]) == 2:
-                if slot_values.count(slot_values[1]) == 2:
-                    slot_icons[0] = self.stop_symbol_icon(slot_values[0], 0)
-                    slot_icons[1] = self.stop_symbol_icon(slot_values[1], 0)
-                    slot_icons[2] = self.stop_symbol_icon(slot_values[2], 1)
-                else:
-                    slot_icons[0] = self.stop_symbol_icon(slot_values[0], 0)
-                    slot_icons[1] = self.stop_symbol_icon(slot_values[1], 1)
-                    slot_icons[2] = self.stop_symbol_icon(slot_values[2], 0)
-                
-            elif slot_values.count(slot_values[1]) == 2:
-                slot_icons[0] = self.stop_symbol_icon(slot_values[0], 1)
-                slot_icons[1] = self.stop_symbol_icon(slot_values[1], 0)
-                slot_icons[2] = self.stop_symbol_icon(slot_values[2], 0)
-            
-            else:
-                slot_icons[0] = self.stop_symbol_icon(slot_values[0], 1)
-                slot_icons[1] = self.stop_symbol_icon(slot_values[1], 1)
-                slot_icons[2] = self.stop_symbol_icon(slot_values[2], 1)
 
         is_sloto = False
         for i in range(3):
@@ -188,6 +167,10 @@ class SlotView(discord.ui.View):
             'poison': ['<a:sloto_poison:1300139179568791652>','<a:slot_poison:1300138235921432586>'],
         }
         return slot_icons[symbol][slot_index]
+
+    def _result_symbol_icons(self, slot_values, has_reward):
+        slot_index = 0 if has_reward else 1
+        return [self.stop_symbol_icon(symbol, slot_index) for symbol in slot_values]
 
     def calculate_reward(self, slot_values):
         category_dict = {

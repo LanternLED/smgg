@@ -171,7 +171,7 @@ def load_scores(user_id: str):
 def _filter_score_updates(user_scores: dict) -> dict:
     filtered_updates = {}
     for k, v in user_scores.items():
-        if k == "user_id":
+        if k in {"user_id", "typing_accuracy_sum", "typing_accuracy_count"}:
             continue
         if v is None:
             continue
