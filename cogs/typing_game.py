@@ -23,6 +23,7 @@ DICTIONARY_DB_PATH = "dictionary.db"
 TYPING_TIMEOUT_SECONDS = 60
 logger = logging.getLogger(__name__)
 active_typing_sessions: set[str] = set()
+typing_escape_events: dict[str, asyncio.Event] = {}
 
 
 def ensure_typing_column():
@@ -33,7 +34,15 @@ def ensure_typing_column():
             conn.execute(
                 "ALTER TABLE user ADD COLUMN typing INTEGER NOT NULL DEFAULT 0"
             )
-            conn.commit()
+        if not any(column["name"] == "typing_accuracy_sum" for column in columns):
+            conn.execute(
+                "ALTER TABLE user ADD COLUMN typing_accuracy_sum REAL NOT NULL DEFAULT 0"
+            )
+        if not any(column["name"] == "typing_accuracy_count" for column in columns):
+            conn.execute(
+                "ALTER TABLE user ADD COLUMN typing_accuracy_count INTEGER NOT NULL DEFAULT 0"
+            )
+        conn.commit()
     finally:
         conn.close()
 
@@ -93,6 +102,8 @@ def normalize_typing_text(text: str) -> str:
 
 
 def levenshtein_distance(left: str, right: str) -> int:
+    left = unicodedata.normalize("NFD", left)
+    right = unicodedata.normalize("NFD", right)
     if len(left) < len(right):
         left, right = right, left
 
@@ -119,36 +130,34 @@ class TypingGameCog(commands.Cog):
 
     @commands.command(name="타자연습", aliases=["타자"])
     async def typing_game(self, ctx: commands.Context):
+        await self._run_typing_game(ctx, infinite=False)
+
+    @commands.command(name="무한타자", aliases=["무한타자연습"])
+    async def infinite_typing_game(self, ctx: commands.Context):
+        await self._run_typing_game(ctx, infinite=True)
+
+    def request_escape(self, user_id: str) -> bool:
+        escape_event = typing_escape_events.get(user_id)
+        if escape_event is None or escape_event.is_set():
+            return False
+        escape_event.set()
+        return True
+
+    async def _run_typing_game(self, ctx: commands.Context, *, infinite: bool):
         await ctx.message.delete()
         user_id = str(ctx.author.id)
         if user_id in active_typing_sessions:
             await ctx.send("진행 중인 타자연습을 먼저 마쳐주세요.", delete_after=5)
             return
         active_typing_sessions.add(user_id)
-
+        escape_event = asyncio.Event() if infinite else None
+        if escape_event is not None:
+            typing_escape_events[user_id] = escape_event
         try:
             booster_result = await async_grant_daily_booster(user_id)
             booster_notice = format_booster_gain(booster_result)
             if booster_notice:
                 await ctx.send(f"{ctx.author.mention} {booster_notice}")
-
-            user_scores = await async_check_level(user_id)
-            progress = int(user_scores.get("typing", 0) or 0)
-            example_id = get_example_id(user_id, progress, self.example_ids)
-            example = await asyncio.to_thread(load_example, example_id)
-            target = normalize_typing_text(example)
-            if not target:
-                raise ValueError(f"예문 ID {example_id}의 내용이 비어 있습니다.")
-
-            await ctx.send(
-                f"{ctx.author.mention} 아래 문장을 그대로 입력하세요. "
-                f"(제한 시간 {TYPING_TIMEOUT_SECONDS}초)\n> {example}",
-                allowed_mentions=discord.AllowedMentions(
-                    users=[ctx.author],
-                    roles=False,
-                    everyone=False,
-                ),
-            )
 
             def is_answer(message: discord.Message) -> bool:
                 return (
@@ -157,57 +166,121 @@ class TypingGameCog(commands.Cog):
                     and not message.content.startswith(ctx.prefix)
                 )
 
-            try:
-                answer_message = await self.bot.wait_for(
-                    "message",
-                    timeout=TYPING_TIMEOUT_SECONDS,
-                    check=is_answer,
-                )
-            except asyncio.TimeoutError:
-                await ctx.send("시간 초과! 이번 예문은 진행도에 반영되지 않았습니다.")
-                return
-
-            answer = normalize_typing_text(answer_message.content)
-            distance = await asyncio.to_thread(
-                levenshtein_distance,
-                target,
-                answer,
-            )
-            score = max(0, len(target) - distance)
-            accuracy = max(0.0, 1.0 - distance / len(target))
-
-            async with get_user_lock(user_id):
+            example_offset = 0
+            while True:
+                if escape_event is not None and escape_event.is_set():
+                    return
                 user_scores = await async_check_level(user_id)
-                user_scores["typing"] = int(user_scores.get("typing", 0) or 0) + 1
-                booster_bonus = apply_game_reward(
-                    user_scores,
-                    score,
-                    exp_rate=0.5,
+                progress = int(user_scores.get("typing", 0) or 0)
+                example_id = get_example_id(
+                    user_id,
+                    progress + example_offset,
+                    self.example_ids,
                 )
-                await async_save_scores(user_id, user_scores)
+                example = await asyncio.to_thread(load_example, example_id)
+                target = normalize_typing_text(example)
+                if not target:
+                    raise ValueError(f"예문 ID {example_id}의 내용이 비어 있습니다.")
 
-            cycle_progress = user_scores["typing"] % len(self.example_ids)
-            if cycle_progress == 0:
-                cycle_progress = len(self.example_ids)
-            cycle_count = (user_scores["typing"] - 1) // len(self.example_ids) + 1
-            bonus_notice = f" (부스터 +{booster_bonus})" if booster_bonus > 0 else ""
-            await ctx.send(
-                f"{ctx.author.mention} 정확도 **{accuracy:.1%}** "
-                f"(편집 거리 {distance}) — **+{score}점**{bonus_notice}\n"
-                f"진행도: {cycle_progress:,}/{len(self.example_ids):,} "
-                f"(전체 {user_scores['typing']:,}회, {cycle_count}회차) · "
-                f"보유 칩: {user_scores['chips']:,}",
-                allowed_mentions=discord.AllowedMentions(
-                    users=[ctx.author],
-                    roles=False,
-                    everyone=False,
-                ),
-            )
+                await ctx.send(
+                    f"{ctx.author.mention} 아래 문장을 그대로 입력하세요. "
+                    f"(제한 시간 {TYPING_TIMEOUT_SECONDS}초)\n> {example}",
+                    allowed_mentions=discord.AllowedMentions(
+                        users=[ctx.author],
+                        roles=False,
+                        everyone=False,
+                    ),
+                )
+
+                try:
+                    if escape_event is None:
+                        answer_message = await self.bot.wait_for(
+                            "message",
+                            timeout=TYPING_TIMEOUT_SECONDS,
+                            check=is_answer,
+                        )
+                    else:
+                        answer_task = asyncio.create_task(
+                            self.bot.wait_for(
+                                "message",
+                                timeout=TYPING_TIMEOUT_SECONDS,
+                                check=is_answer,
+                            )
+                        )
+                        escape_task = asyncio.create_task(escape_event.wait())
+                        done, pending = await asyncio.wait(
+                            (answer_task, escape_task),
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        for task in pending:
+                            task.cancel()
+                        await asyncio.gather(*pending, return_exceptions=True)
+                        if escape_task in done and escape_event.is_set():
+                            return
+                        answer_message = answer_task.result()
+                except asyncio.TimeoutError:
+                    await ctx.send("시간 초과! 이번 예문은 진행도에 반영되지 않았습니다.")
+                    if infinite:
+                        example_offset += 1
+                        continue
+                    return
+
+                answer = normalize_typing_text(answer_message.content)
+                distance = await asyncio.to_thread(
+                    levenshtein_distance,
+                    target,
+                    answer,
+                )
+                phoneme_count = len(unicodedata.normalize("NFD", target))
+                score = max(0, phoneme_count - distance) // 3
+                accuracy = max(0.0, 1.0 - distance / phoneme_count)
+
+                async with get_user_lock(user_id):
+                    user_scores = await async_check_level(user_id)
+                    user_scores["typing"] = int(user_scores.get("typing", 0) or 0) + 1
+                    accuracy_sum = float(
+                        user_scores.get("typing_accuracy_sum", 0) or 0
+                    ) + accuracy
+                    accuracy_count = int(
+                        user_scores.get("typing_accuracy_count", 0) or 0
+                    ) + 1
+                    user_scores["typing_accuracy_sum"] = accuracy_sum
+                    user_scores["typing_accuracy_count"] = accuracy_count
+                    average_accuracy = accuracy_sum / accuracy_count
+                    booster_bonus = apply_game_reward(
+                        user_scores,
+                        score,
+                        exp_rate=0.5,
+                    )
+                    await async_save_scores(user_id, user_scores)
+
+                cycle_progress = user_scores["typing"] % len(self.example_ids)
+                if cycle_progress == 0:
+                    cycle_progress = len(self.example_ids)
+                cycle_count = (user_scores["typing"] - 1) // len(self.example_ids) + 1
+                bonus_notice = f" (부스터 +{booster_bonus})" if booster_bonus > 0 else ""
+                await ctx.send(
+                    f"{ctx.author.mention} 이번 문장 정확도 **{accuracy:.1%}** · "
+                    f"평균 정확도 **{average_accuracy:.1%}** "
+                    f"(자모 편집 거리 {distance}) — **+{score}점**{bonus_notice}\n"
+                    f"진행도: {cycle_progress:,}/{len(self.example_ids):,} "
+                    f"(전체 {user_scores['typing']:,}회, {cycle_count}회차) · "
+                    f"보유 칩: {user_scores['chips']:,}",
+                    allowed_mentions=discord.AllowedMentions(
+                        users=[ctx.author],
+                        roles=False,
+                        everyone=False,
+                    ),
+                )
+                if not infinite:
+                    return
         except (sqlite3.Error, OSError, ValueError, RuntimeError):
             logger.exception("타자연습 진행 중 오류 발생 (user_id=%s)", user_id)
             await ctx.send("타자연습을 진행하지 못했습니다. 잠시 후 다시 시도해주세요.")
         finally:
             active_typing_sessions.discard(user_id)
+            if typing_escape_events.get(user_id) is escape_event:
+                typing_escape_events.pop(user_id, None)
 
 
 async def setup(bot: commands.Bot):

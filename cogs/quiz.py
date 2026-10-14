@@ -11,7 +11,9 @@ from utils import (
 )
 
 QUIZ_DB_PATH = "dictionary.db"
+QUIZ_TIMEOUT_SECONDS = 20
 user_quiz_sessions = {}
+infinite_quiz_escape_events: dict[str, asyncio.Event] = {}
 logger = logging.getLogger(__name__)
 
 def calculate_quiz_reward(streak):
@@ -139,7 +141,8 @@ class QuizView(discord.ui.View):
         user_mention="",
         display_name="",
     ):
-        super().__init__(timeout=20)
+        super().__init__(timeout=QUIZ_TIMEOUT_SECONDS)
+        self.deadline = asyncio.get_running_loop().time() + QUIZ_TIMEOUT_SECONDS
         self.user_id = user_id
         self.word = word
         self.definition = definition
@@ -170,6 +173,12 @@ class QuizView(discord.ui.View):
 
     async def on_timeout(self):
         if not self.answered and self.message:
+            self.answered = True
+            self.infinite = False
+            self.stop()
+            if user_quiz_sessions.get(self.user_id) is self:
+                del user_quiz_sessions[self.user_id]
+            infinite_quiz_escape_events.pop(self.user_id, None)
             user_scores = await async_check_level(self.user_id)
             user_scores["quiz_streak"] = 0
             await async_save_scores(self.user_id, user_scores)
@@ -179,8 +188,6 @@ class QuizView(discord.ui.View):
                 f"(⏰ 시간 초과! 정답은 **{self.word}**입니다.)",
                 view=self,
             )
-        if self.user_id in user_quiz_sessions:
-            del user_quiz_sessions[self.user_id]
 
 class QuizButton(discord.ui.Button):
     def __init__(self, label, index, view_ref):
@@ -193,10 +200,18 @@ class QuizButton(discord.ui.Button):
         if str(interaction.user.id) != view.user_id:
             await interaction.response.send_message("이 퀴즈는 호출자만 답할 수 있습니다!", ephemeral=True)
             return
-        await async_grant_daily_booster(view.user_id)
         if view.answered: return
-            
+        if asyncio.get_running_loop().time() >= view.deadline:
+            await view.on_timeout()
+            await interaction.response.send_message(
+                "시간이 초과되어 이번 문제는 미응시 처리되었습니다.",
+                ephemeral=True,
+            )
+            return
+
         view.answered = True
+        view.stop()
+        await async_grant_daily_booster(view.user_id)
         user_scores = await async_check_level(view.user_id)
         
         if self.index == view.correct_idx:
@@ -220,6 +235,13 @@ class QuizButton(discord.ui.Button):
         await interaction.response.edit_message(content=result_msg, view=view)
         
         if view.infinite:
+            escape_event = infinite_quiz_escape_events.get(view.user_id)
+            if escape_event is not None and escape_event.is_set():
+                if user_quiz_sessions.get(view.user_id) is view:
+                    del user_quiz_sessions[view.user_id]
+                if infinite_quiz_escape_events.get(view.user_id) is escape_event:
+                    infinite_quiz_escape_events.pop(view.user_id, None)
+                return
             next_msg = await interaction.channel.send("문제 준비중...")
             await view.cog_ref.quiz_set(
                 view.user_id,
@@ -228,7 +250,9 @@ class QuizButton(discord.ui.Button):
                 user_mention=view.user_mention,
                 display_name=view.display_name,
             )
-        elif view.user_id in user_quiz_sessions:
+        else:
+            infinite_quiz_escape_events.pop(view.user_id, None)
+        if not view.infinite and user_quiz_sessions.get(view.user_id) is view:
             del user_quiz_sessions[view.user_id]
 
 class QuizCog(commands.Cog):
@@ -243,6 +267,7 @@ class QuizCog(commands.Cog):
         user_mention="",
         display_name="",
     ):
+        escape_event = infinite_quiz_escape_events.get(user_id) if infinite else None
         try:
             # 터미널 대신 디스코드로 에러를 직접 쏘기 위한 안전망(Try-Except)
             word_data = await async_get_random_word_and_definition()
@@ -300,28 +325,49 @@ class QuizCog(commands.Cog):
                 display_name,
             )
             view.cog_ref = self
+            if escape_event is not None and escape_event.is_set():
+                await msg.edit(
+                    content="무한퀴즈에서 탈출했습니다!"
+                )
+                if infinite_quiz_escape_events.get(user_id) is escape_event:
+                    infinite_quiz_escape_events.pop(user_id, None)
+                return
             await msg.edit(
                 content=f"{user_mention} '{definition}'의 뜻을 가진 단어는?",
                 view=view,
             )
+            if escape_event is not None and escape_event.is_set():
+                view.stop()
+                await msg.edit(
+                    content="무한퀴즈에서 탈출했습니다!",
+                    view=None,
+                )
+                if infinite_quiz_escape_events.get(user_id) is escape_event:
+                    infinite_quiz_escape_events.pop(user_id, None)
+                return
             view.message = msg
             user_quiz_sessions[user_id] = view
 
         except Exception:
             logger.exception("퀴즈 준비 중 오류 발생 (user_id=%s)", user_id)
             await msg.edit(content="퀴즈를 준비하지 못했습니다. 잠시 후 다시 시도해주세요.")
+            if (
+                escape_event is not None
+                and infinite_quiz_escape_events.get(user_id) is escape_event
+            ):
+                infinite_quiz_escape_events.pop(user_id, None)
 
     @commands.command(name='퀴즈')
     async def quiz(self, ctx):
         await ctx.message.delete()
         user_id = str(ctx.author.id)
+        if user_id in user_quiz_sessions or user_id in infinite_quiz_escape_events:
+            await ctx.send("이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
+            return
         booster_result = await async_grant_daily_booster(user_id)
         booster_notice = format_booster_gain(booster_result)
         if booster_notice:
             await ctx.send(f"{ctx.author.mention} {booster_notice}")
-        if user_id in user_quiz_sessions:
-            await ctx.send(f"이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
-            return
         msg = await ctx.send("퀴즈 준비중...")
         await self.quiz_set(
             user_id,
@@ -334,21 +380,74 @@ class QuizCog(commands.Cog):
     async def quizinf(self, ctx):
         await ctx.message.delete()
         user_id = str(ctx.author.id)
-        booster_result = await async_grant_daily_booster(user_id)
-        booster_notice = format_booster_gain(booster_result)
-        if booster_notice:
-            await ctx.send(f"{ctx.author.mention} {booster_notice}")
-        if user_id in user_quiz_sessions:
-            await ctx.send(f"이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
+        if user_id in user_quiz_sessions or user_id in infinite_quiz_escape_events:
+            await ctx.send("이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
             return
-        msg = await ctx.send("퀴즈 준비중...")
-        await self.quiz_set(
-            user_id,
-            msg,
-            infinite=True,
-            user_mention=ctx.author.mention,
-            display_name=ctx.author.display_name,
-        )
+        escape_event = asyncio.Event()
+        infinite_quiz_escape_events[user_id] = escape_event
+        try:
+            booster_result = await async_grant_daily_booster(user_id)
+            booster_notice = format_booster_gain(booster_result)
+            if booster_notice:
+                await ctx.send(f"{ctx.author.mention} {booster_notice}")
+            msg = await ctx.send("퀴즈 준비중...")
+            await self.quiz_set(
+                user_id,
+                msg,
+                infinite=True,
+                user_mention=ctx.author.mention,
+                display_name=ctx.author.display_name,
+            )
+        except Exception:
+            if infinite_quiz_escape_events.get(user_id) is escape_event:
+                infinite_quiz_escape_events.pop(user_id, None)
+            raise
+
+    @commands.command(name='탈출')
+    async def escape_infinite_game(self, ctx):
+        await ctx.message.delete()
+        user_id = str(ctx.author.id)
+        escape_event = infinite_quiz_escape_events.get(user_id)
+        view = user_quiz_sessions.get(user_id)
+        if escape_event is not None:
+            if view is not None and view.infinite:
+                if asyncio.get_running_loop().time() >= view.deadline:
+                    await view.on_timeout()
+                    await ctx.send(
+                        "느려. (퀴즈 제한 시간이 먼저 끝나버렸습니다...)"
+                    )
+                    return
+                if view.answered:
+                    await ctx.send(
+                        "무르기 없기... (이미 답을 제출해서, 다음 문제에서 다시 탈출해주세요.)",
+                        delete_after=5,
+                    )
+                    return
+            escape_event.set()
+            if view is not None and view.infinite:
+                view.infinite = False
+                view.answered = True
+                view.stop()
+                for item in view.children:
+                    item.disabled = True
+                if user_quiz_sessions.get(user_id) is view:
+                    user_quiz_sessions.pop(user_id, None)
+                if infinite_quiz_escape_events.get(user_id) is escape_event:
+                    infinite_quiz_escape_events.pop(user_id, None)
+                if view.message is not None:
+                    await view.message.edit(
+                        content=(
+                            f"{view.display_name} 무한퀴즈에서 탈출했습니다."),
+                        view=view,
+                    )
+            await ctx.send("무한퀴즈에서 탈출했습니다.")
+            return
+
+        typing_cog = self.bot.get_cog("TypingGameCog")
+        if typing_cog is not None and typing_cog.request_escape(user_id):
+            await ctx.send("무한타자연습에서 탈출했습니다.")
+            return
+        await ctx.send("진행 중인 무한퀴즈 또는 무한타자연습이 없습니다.", delete_after=5)
 
 async def setup(bot):
     await bot.add_cog(QuizCog(bot))
