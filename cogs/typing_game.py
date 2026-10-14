@@ -31,36 +31,12 @@ typing_escape_events: dict[str, asyncio.Event] = {}
 def ensure_typing_column():
     conn = get_db_connection()
     try:
-        conn.execute("BEGIN IMMEDIATE")
         columns = conn.execute("PRAGMA table_info(user)").fetchall()
-        column_names = {column["name"] for column in columns}
-
-        accuracy_columns = (
-            "typing_accuracy_sum",
-            "typing_accuracy_count",
-        )
-        if (
-            sqlite3.sqlite_version_info < (3, 35, 0)
-            and column_names.intersection(accuracy_columns)
-        ):
-            raise RuntimeError(
-                "typing accuracy column migration requires SQLite 3.35.0 or newer "
-                f"(found {sqlite3.sqlite_version})."
-            )
-
         if not any(column["name"] == "typing" for column in columns):
             conn.execute(
                 "ALTER TABLE user ADD COLUMN typing INTEGER NOT NULL DEFAULT 0"
             )
-
-        for column in accuracy_columns:
-            if column in column_names:
-                conn.execute(f'ALTER TABLE user DROP COLUMN "{column}"')
-
         conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
     finally:
         conn.close()
 
