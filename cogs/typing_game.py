@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import logging
 import math
+import random
 import re
 import sqlite3
 import unicodedata
@@ -21,6 +22,7 @@ from utils import (
 
 DICTIONARY_DB_PATH = "dictionary.db"
 TYPING_TIMEOUT_SECONDS = 60
+TYPING_MARKERS = ("§", "※", "◆", "◇", "★", "☆", "♠", "♣", "♥", "♦")
 logger = logging.getLogger(__name__)
 active_typing_sessions: set[str] = set()
 typing_escape_events: dict[str, asyncio.Event] = {}
@@ -101,6 +103,20 @@ def normalize_typing_text(text: str) -> str:
     return re.sub(r"\s+", " ", normalized).strip()
 
 
+def insert_typing_marker(text: str) -> str:
+    markers = tuple(marker for marker in TYPING_MARKERS if marker not in text)
+    if not markers:
+        markers = tuple(
+            chr(codepoint)
+            for codepoint in range(0x2600, 0x2800)
+            if unicodedata.category(chr(codepoint)).startswith("S")
+            and chr(codepoint) not in text
+        )
+    marker = random.choice(markers or TYPING_MARKERS)
+    position = random.randrange(len(text) + 1)
+    return f"{text[:position]}{marker}{text[position:]}"
+
+
 def levenshtein_distance(left: str, right: str) -> int:
     left = unicodedata.normalize("NFD", left)
     right = unicodedata.normalize("NFD", right)
@@ -144,7 +160,6 @@ class TypingGameCog(commands.Cog):
         return True
 
     async def _run_typing_game(self, ctx: commands.Context, *, infinite: bool):
-        await ctx.message.delete()
         user_id = str(ctx.author.id)
         if user_id in active_typing_sessions:
             await ctx.send("진행 중인 타자연습을 먼저 마쳐주세요.", delete_after=5)
@@ -153,11 +168,20 @@ class TypingGameCog(commands.Cog):
         escape_event = asyncio.Event() if infinite else None
         if escape_event is not None:
             typing_escape_events[user_id] = escape_event
+        session_message = None
+        last_result = ""
         try:
             booster_result = await async_grant_daily_booster(user_id)
             booster_notice = format_booster_gain(booster_result)
             if booster_notice:
                 await ctx.send(f"{ctx.author.mention} {booster_notice}")
+            session_message = await ctx.send("타자연습을 준비 중입니다...")
+
+            allowed_mentions = discord.AllowedMentions(
+                users=[ctx.author],
+                roles=False,
+                everyone=False,
+            )
 
             def is_answer(message: discord.Message) -> bool:
                 return (
@@ -169,6 +193,18 @@ class TypingGameCog(commands.Cog):
             example_offset = 0
             while True:
                 if escape_event is not None and escape_event.is_set():
+                    content = "\n\n".join(
+                        part
+                        for part in (
+                            last_result,
+                            "무한 타자연습에서 탈출했습니다.",
+                        )
+                        if part
+                    )
+                    await session_message.edit(
+                        content=content,
+                        allowed_mentions=allowed_mentions,
+                    )
                     return
                 user_scores = await async_check_level(user_id)
                 progress = int(user_scores.get("typing", 0) or 0)
@@ -182,14 +218,19 @@ class TypingGameCog(commands.Cog):
                 if not target:
                     raise ValueError(f"예문 ID {example_id}의 내용이 비어 있습니다.")
 
-                await ctx.send(
-                    f"{ctx.author.mention} 아래 문장을 그대로 입력하세요. "
-                    f"(제한 시간 {TYPING_TIMEOUT_SECONDS}초)\n> {example}",
-                    allowed_mentions=discord.AllowedMentions(
-                        users=[ctx.author],
-                        roles=False,
-                        everyone=False,
-                    ),
+                marked_example = insert_typing_marker(target)
+                prompt = (
+                    f"{ctx.author.mention} 아래 문장을 입력하세요. "
+                    f"(제한 시간 {TYPING_TIMEOUT_SECONDS}초, "
+                    "삽입된 특수기호는 입력하지 마세요.)\n"
+                    f"> {marked_example}"
+                )
+                content = "\n\n".join(
+                    part for part in (last_result, prompt) if part
+                )
+                await session_message.edit(
+                    content=content,
+                    allowed_mentions=allowed_mentions,
                 )
 
                 try:
@@ -216,14 +257,41 @@ class TypingGameCog(commands.Cog):
                             task.cancel()
                         await asyncio.gather(*pending, return_exceptions=True)
                         if escape_task in done and escape_event.is_set():
+                            content = "\n\n".join(
+                                part
+                                for part in (
+                                    last_result,
+                                    "무한 타자연습에서 탈출했습니다.",
+                                )
+                                if part
+                            )
+                            await session_message.edit(
+                                content=content,
+                                allowed_mentions=allowed_mentions,
+                            )
                             return
                         answer_message = answer_task.result()
                 except asyncio.TimeoutError:
-                    await ctx.send("시간 초과! 이번 예문은 진행도에 반영되지 않았습니다.")
+                    last_result = (
+                        "시간 초과! 이번 예문은 진행도에 반영되지 않았습니다."
+                    )
                     if infinite:
                         example_offset += 1
                         continue
+                    await session_message.edit(
+                        content=last_result,
+                        allowed_mentions=allowed_mentions,
+                    )
                     return
+
+                try:
+                    await answer_message.delete()
+                except discord.NotFound:
+                    pass
+                except discord.HTTPException:
+                    logger.exception(
+                        "타자 입력 메시지 삭제 실패 (user_id=%s)", user_id
+                    )
 
                 answer = normalize_typing_text(answer_message.content)
                 distance = await asyncio.to_thread(
@@ -259,24 +327,30 @@ class TypingGameCog(commands.Cog):
                     cycle_progress = len(self.example_ids)
                 cycle_count = (user_scores["typing"] - 1) // len(self.example_ids) + 1
                 bonus_notice = f" (부스터 +{booster_bonus})" if booster_bonus > 0 else ""
-                await ctx.send(
+                last_result = (
                     f"{ctx.author.mention} 이번 문장 정확도 **{accuracy:.1%}** · "
                     f"평균 정확도 **{average_accuracy:.1%}** "
                     f"(자모 편집 거리 {distance}) — **+{score}점**{bonus_notice}\n"
                     f"진행도: {cycle_progress:,}/{len(self.example_ids):,} "
                     f"(전체 {user_scores['typing']:,}회, {cycle_count}회차) · "
-                    f"보유 칩: {user_scores['chips']:,}",
-                    allowed_mentions=discord.AllowedMentions(
-                        users=[ctx.author],
-                        roles=False,
-                        everyone=False,
-                    ),
+                    f"보유 칩: {user_scores['chips']:,}"
                 )
                 if not infinite:
+                    await session_message.edit(
+                        content=last_result,
+                        allowed_mentions=allowed_mentions,
+                    )
                     return
         except (sqlite3.Error, OSError, ValueError, RuntimeError):
             logger.exception("타자연습 진행 중 오류 발생 (user_id=%s)", user_id)
-            await ctx.send("타자연습을 진행하지 못했습니다. 잠시 후 다시 시도해주세요.")
+            error_message = "타자연습을 진행하지 못했습니다. 잠시 후 다시 시도해주세요."
+            if session_message is not None:
+                content = "\n\n".join(
+                    part for part in (last_result, error_message) if part
+                )
+                await session_message.edit(content=content)
+            else:
+                await ctx.send(error_message)
         finally:
             active_typing_sessions.discard(user_id)
             if typing_escape_events.get(user_id) is escape_event:

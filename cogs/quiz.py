@@ -359,7 +359,6 @@ class QuizCog(commands.Cog):
 
     @commands.command(name='퀴즈')
     async def quiz(self, ctx):
-        await ctx.message.delete()
         user_id = str(ctx.author.id)
         if user_id in user_quiz_sessions or user_id in infinite_quiz_escape_events:
             await ctx.send("이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
@@ -378,7 +377,6 @@ class QuizCog(commands.Cog):
 
     @commands.command(name='무한퀴즈')
     async def quizinf(self, ctx):
-        await ctx.message.delete()
         user_id = str(ctx.author.id)
         if user_id in user_quiz_sessions or user_id in infinite_quiz_escape_events:
             await ctx.send("이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
@@ -405,7 +403,6 @@ class QuizCog(commands.Cog):
 
     @commands.command(name='탈출')
     async def escape_infinite_game(self, ctx):
-        await ctx.message.delete()
         user_id = str(ctx.author.id)
         escape_event = infinite_quiz_escape_events.get(user_id)
         view = user_quiz_sessions.get(user_id)
