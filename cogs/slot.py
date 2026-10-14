@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 # 빅슬롯: 쿨타임이 끝나면 판과 컨트롤 메시지를 함께 지운다.
 # 쿨타임이 이미 지난 뒤에 결과가 나온 경우에도 자랑할 시간을 이만큼(초)은 남겨 둔다.
 BIG_SLOT_MIN_VISIBLE = 10
+BIG_SLOT_ROWS = 6
+BIG_SLOT_COLS = 5
 
 # --- 이모지 설정 ---
 SLOT_INIT = "<a:slot:1300138026243981424>"
@@ -395,13 +397,13 @@ class SlotCog(commands.Cog):
         if booster_notice:
             await ctx.send(f"{ctx.author.mention} {booster_notice}")
 
-        init_board = "\n".join([SLOT_INIT * 6] * 5)
+        init_board = "\n".join([SLOT_INIT * BIG_SLOT_COLS] * BIG_SLOT_ROWS)
         slot_msg = await ctx.send(init_board)
         view = SlotView(
             ctx.author.id,
             slot_msg=slot_msg,
-            rows=5,
-            cols=6,
+            rows=BIG_SLOT_ROWS,
+            cols=BIG_SLOT_COLS,
             bet=3500,
             allow_replay=False,
             cooldown_end_timestamp=int(ctx.message.created_at.timestamp()) + 60,
