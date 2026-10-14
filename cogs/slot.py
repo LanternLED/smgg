@@ -12,9 +12,7 @@ from utils import (
 
 logger = logging.getLogger(__name__)
 
-# 빅슬롯: 쿨타임이 끝나면 판과 컨트롤 메시지를 함께 지운다.
-# 쿨타임이 이미 지난 뒤에 결과가 나온 경우에도 자랑할 시간을 이만큼(초)은 남겨 둔다.
-BIG_SLOT_MIN_VISIBLE = 10
+BIG_SLOT_REPLAY_COOLDOWN = 60
 BIG_SLOT_ROWS = 6
 BIG_SLOT_COLS = 5
 
@@ -120,7 +118,7 @@ def render_board_static(
 class SlotView(discord.ui.View):
     def __init__(
         self, user_id, slot_msg=None, *, rows=3, cols=5, bet=1000,
-        allow_replay=True, cooldown_end_timestamp=None,
+        allow_replay=True, replay_cooldown=0,
     ):
         super().__init__(timeout=600)
         self.user_id = str(user_id)
@@ -129,25 +127,15 @@ class SlotView(discord.ui.View):
         self.cols = cols
         self.bet = bet
         self.allow_replay = allow_replay
-        self.cooldown_end_timestamp = cooldown_end_timestamp
+        self.replay_cooldown = replay_cooldown
         self.is_rolling = False
         self.slotmsg = ""
         self.slotmsg2 = ""
-        self.control_msg = None  # on_timeout에서 버튼을 비활성화하기 위해 컨트롤 메시지를 기억해둠
-        self._delete_task = None  # 빅슬롯 예약 삭제 작업 (참조를 들고 있어야 GC로 사라지지 않음)
+        self.control_msg = None
+        self._cooldown_task = None
 
     async def on_timeout(self):
-        if self.cooldown_end_timestamp is not None:
-            # 빅슬롯: 안 당기고 방치된 판도 그냥 지운다.
-            await self._delete_messages()
-            return
-        for item in self.children:
-            item.disabled = True
-        if self.control_msg is not None:
-            try:
-                await self.control_msg.edit(view=self)
-            except discord.HTTPException:
-                pass
+        await self._delete_messages()
 
     async def _delete_messages(self):
         """판 메시지와 컨트롤 메시지를 지우고 뷰를 종료한다."""
@@ -156,13 +144,31 @@ class SlotView(discord.ui.View):
                 continue
             try:
                 await msg.delete()
+            except discord.NotFound:
+                pass
             except discord.HTTPException:
-                pass  # 이미 지워졌거나(NotFound) 지울 수 없는 경우
+                logger.exception("슬롯 세션 메시지 삭제에 실패했습니다 (user_id=%s)", self.user_id)
         self.stop()
 
-    async def _delete_at(self, delete_timestamp):
-        await asyncio.sleep(max(0.0, delete_timestamp - time.time()))
-        await self._delete_messages()
+    async def _enable_pull_after_cooldown(self, cooldown_end_timestamp):
+        await asyncio.sleep(max(0.0, cooldown_end_timestamp - time.time()))
+        if self.is_finished():
+            return
+
+        pull_button = next(
+            (item for item in self.children
+             if getattr(item, "custom_id", None) == "action_pull"),
+            None,
+        )
+        if pull_button is None:
+            return
+
+        pull_button.disabled = False
+        if self.control_msg is not None:
+            try:
+                await self.control_msg.edit(view=self)
+            except discord.HTTPException:
+                logger.exception("슬롯 쿨타임 종료 후 버튼 활성화에 실패했습니다 (user_id=%s)", self.user_id)
 
     async def _edit_board(self, board_text):
         await self.slot_msg.edit(content=board_text, embed=None)
@@ -269,18 +275,9 @@ class SlotView(discord.ui.View):
             self.slotmsg = final_board_text
             self.slotmsg2 = result_text
 
-            cooldown_notice = ""
-            delete_timestamp = None
-            if self.cooldown_end_timestamp is not None:
-                now = time.time()
-                if self.cooldown_end_timestamp > now:
-                    cooldown_notice = (
-                        f"\n⏳ 다음 빅슬롯: <t:{self.cooldown_end_timestamp}:R>"
-                    )
-                # 쿨타임 종료 시점에 삭제. 이미 지났다면 최소 노출 시간만 남긴다.
-                delete_timestamp = max(
-                    self.cooldown_end_timestamp, now + BIG_SLOT_MIN_VISIBLE
-                )
+            cooldown_end_timestamp = None
+            if self.allow_replay and self.replay_cooldown > 0:
+                cooldown_end_timestamp = time.time() + self.replay_cooldown
 
             pull_button = next(
                 (item for item in self.children
@@ -289,7 +286,7 @@ class SlotView(discord.ui.View):
             )
             if self.allow_replay and pull_button is not None:
                 pull_button.label = "당기기"
-                pull_button.disabled = False
+                pull_button.disabled = cooldown_end_timestamp is not None
             elif pull_button is not None:
                 self.remove_item(pull_button)
             # 결과가 확정됐으니 자랑하기를 (없으면 만들고) 켠다. 슬롯·빅슬롯 공통.
@@ -306,14 +303,20 @@ class SlotView(discord.ui.View):
                 self.add_item(share_button)
             share_button.disabled = False
 
+            cooldown_notice = ""
+            if cooldown_end_timestamp is not None:
+                cooldown_notice = (
+                    f"\n⏳ 다음 빅슬롯: <t:{int(cooldown_end_timestamp)}:R>"
+                )
             await interaction.message.edit(
                 content=f"<@{self.user_id}>\n{result_text}{cooldown_notice}",
                 view=self,
             )
 
-            # 빅슬롯: 쿨타임이 끝나면 판째로 지운다.
-            if delete_timestamp is not None and self._delete_task is None:
-                self._delete_task = asyncio.create_task(self._delete_at(delete_timestamp))
+            if cooldown_end_timestamp is not None:
+                self._cooldown_task = asyncio.create_task(
+                    self._enable_pull_after_cooldown(cooldown_end_timestamp)
+                )
 
         except discord.NotFound:
             logger.warning("슬롯 메시지가 없어 진행을 중단했습니다 (user_id=%s)", self.user_id)
@@ -405,8 +408,7 @@ class SlotCog(commands.Cog):
             rows=BIG_SLOT_ROWS,
             cols=BIG_SLOT_COLS,
             bet=3500,
-            allow_replay=False,
-            cooldown_end_timestamp=int(ctx.message.created_at.timestamp()) + 60,
+            replay_cooldown=BIG_SLOT_REPLAY_COOLDOWN,
         )
         control_msg = await ctx.send(
             f"{ctx.author.mention} **3,500 CHIPS BET!**",

@@ -164,6 +164,7 @@ def load_scores(user_id: str):
     res["active"] = _coerce_int(res.get("active"), 0)
     res["quiz_streak"] = _coerce_int(res.get("quiz_streak"), 0)
     res["lottery_pity"] = _coerce_int(res.get("lottery_pity"), 0)
+    res["typing"] = _coerce_int(res.get("typing"), 0)
     # mahjong_played는 TEXT(DEFAULT NULL)라 정수 변환하지 않고 그대로 둔다
     return res
 
@@ -175,7 +176,17 @@ def _filter_score_updates(user_scores: dict) -> dict:
             continue
         if v is None:
             continue
-        if k in {"booster", "chips", "exp", "level", "score", "active", "quiz_streak", "lottery_pity"}:
+        if k in {
+            "booster",
+            "chips",
+            "exp",
+            "level",
+            "score",
+            "active",
+            "quiz_streak",
+            "lottery_pity",
+            "typing",
+        }:
             filtered_updates[k] = _coerce_int(v, 0)
         else:
             filtered_updates[k] = v

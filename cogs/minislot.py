@@ -2,10 +2,13 @@ import discord
 from discord.ext import commands
 import random
 import asyncio
+import logging
 from utils import (
     async_check_level, async_save_scores, async_grant_daily_booster,
     apply_game_reward, format_booster_gain,
 )
+
+logger = logging.getLogger(__name__)
 
 # 💡 슬롯머신 심볼별 등장 가중치
 SYMBOL_WEIGHTS = {
@@ -31,11 +34,12 @@ def apply_spin_reward(user_scores: dict, reward: int, *, spin_cost: int = 50, ex
 
 
 class SlotView(discord.ui.View):
-    def __init__(self, user_id, msg):
+    def __init__(self, user_id, msg, slot_msg=None):
         super().__init__(timeout=600)
         self.is_roll = False
         self.user_id = user_id
         self.msg = msg
+        self.slot_msg = slot_msg
         self.slotmsg = ""
         self.slotmsg2 = ""
         self.auto_spin = False
@@ -46,6 +50,18 @@ class SlotView(discord.ui.View):
             if isinstance(item, discord.ui.Button) and item.custom_id == "share":
                 item.disabled = True
                 break
+
+    async def on_timeout(self):
+        for msg in (self.msg, self.slot_msg):
+            if msg is None:
+                continue
+            try:
+                await msg.delete()
+            except discord.NotFound:
+                pass
+            except discord.HTTPException:
+                logger.exception("미니슬롯 세션 메시지 삭제에 실패했습니다 (user_id=%s)", self.user_id)
+        self.stop()
 
     async def _spin_slot(self, interaction: discord.Interaction):
         await interaction.edit_original_response(view=self)
@@ -300,9 +316,9 @@ class MiniSlotCog(commands.Cog):
             return
             
         msg = await ctx.send(f"{ctx.author.mention} (50 CHIPS PER 1 SPIN)")
-        view = SlotView(user_id, msg)
         slot_value = "<a:slot:1300138026243981424><a:slot:1300138026243981424><a:slot:1300138026243981424>"
-        await ctx.send(slot_value, view=view)
+        view = SlotView(user_id, msg)
+        view.slot_msg = await ctx.send(slot_value, view=view)
 
     @show_slot.error
     async def show_slot_error(self, ctx, error):
