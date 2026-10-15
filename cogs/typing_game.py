@@ -97,11 +97,15 @@ def join_parts(*parts: str) -> str:
 
 def normalize_typing_text(text: str) -> str:
     normalized = unicodedata.normalize("NFC", text)
+    while True:
+        normalized, removed = re.subn(r"\([^()]*\)|（[^（）]*）", "", normalized)
+        if not removed:
+            break
     return re.sub(r"\s+", " ", normalized).strip()
 
 
 def insert_typing_markers(text: str) -> str:
-    """예문에 특수기호를 삽입한다. 기본 1개 + 10글자마다 1개씩 추가."""
+    """두 글자 이상인 단어 안에만 특수기호를 삽입한다."""
     markers = tuple(marker for marker in TYPING_MARKERS if marker not in text)
     if not markers:
         markers = tuple(
@@ -112,9 +116,17 @@ def insert_typing_markers(text: str) -> str:
         )
     markers = markers or TYPING_MARKERS
 
-    marker_count = min(1 + len(text) // 10, len(text) + 1)
+    eligible_positions = [
+        position
+        for position in range(1, len(text))
+        if text[position - 1].isalnum() and text[position].isalnum()
+    ]
+    marker_count = min(1 + len(text) // 10, len(eligible_positions))
     # 뒤에서부터 끼워 넣어야 앞쪽 삽입 위치가 밀리지 않는다.
-    positions = sorted(random.sample(range(len(text) + 1), marker_count), reverse=True)
+    positions = sorted(
+        random.sample(eligible_positions, marker_count),
+        reverse=True,
+    )
     for position in positions:
         text = f"{text[:position]}{random.choice(markers)}{text[position:]}"
     return text
