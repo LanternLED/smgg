@@ -440,11 +440,15 @@ class QuizCog(commands.Cog):
             # 탈출 문구는 퀴즈/타자 세션 메시지가 직접 띄우므로 별도 안내는 보내지 않는다.
             return
 
-        typing_cog = self.bot.get_cog("TypingGameCog")
-        if typing_cog is not None and typing_cog.request_escape(user_id):
-            # 탈출 문구는 타자연습 세션 메시지가 직접 띄운다.
-            return
-        await ctx.send("진행 중인 무한퀴즈 또는 무한타자연습이 없습니다.", delete_after=5)
+        # 무한타자연습·필사·내용추가는 각 세션이 탈출 문구를 직접 띄운다.
+        for cog_name in ("TypingGameCog", "TranscribeCog"):
+            session_cog = self.bot.get_cog(cog_name)
+            if session_cog is not None and session_cog.request_escape(user_id):
+                return
+        await ctx.send(
+            "진행 중인 무한퀴즈, 무한타자연습, 필사 또는 내용추가가 없습니다.",
+            delete_after=5,
+        )
 
 async def setup(bot):
     await bot.add_cog(QuizCog(bot))

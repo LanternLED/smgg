@@ -21,7 +21,7 @@ from utils import (
 )
 
 DICTIONARY_DB_PATH = "dictionary.db"
-TYPING_TIMEOUT_SECONDS = 60
+TYPING_TIMEOUT_SECONDS = 180
 TYPING_MARKERS = ("§", "※", "◆", "◇", "★", "☆", "♠", "♣", "♥", "♦")
 ESCAPE_MESSAGE = "무한타자연습에서 탈출했습니다."
 logger = logging.getLogger(__name__)
@@ -185,9 +185,15 @@ class TypingGameCog(commands.Cog):
         escape_event.set()
         return True
 
+    def has_session(self, user_id: str) -> bool:
+        return user_id in active_typing_sessions
+
     async def _run_typing_game(self, ctx: commands.Context, *, infinite: bool):
         user_id = str(ctx.author.id)
-        if user_id in active_typing_sessions:
+        transcribe_cog = self.bot.get_cog("TranscribeCog")
+        if user_id in active_typing_sessions or (
+            transcribe_cog is not None and transcribe_cog.has_session(user_id)  # type: ignore[attr-defined]
+        ):
             await ctx.send("진행 중인 타자연습을 먼저 마쳐주세요.", delete_after=5)
             return
         active_typing_sessions.add(user_id)
@@ -216,7 +222,6 @@ class TypingGameCog(commands.Cog):
                     and not message.content.startswith(ctx.prefix)
                 )
 
-            example_offset = 0
             accuracy_sum = 0.0
             accuracy_count = 0
             while True:
@@ -230,7 +235,7 @@ class TypingGameCog(commands.Cog):
                 progress = int(user_scores.get("typing", 0) or 0)
                 example_id = get_example_id(
                     user_id,
-                    progress + example_offset,
+                    progress,
                     self.example_ids,
                 )
                 example = await asyncio.to_thread(load_example, example_id)
@@ -241,7 +246,7 @@ class TypingGameCog(commands.Cog):
                 marked_example = insert_typing_markers(target)
                 prompt = (
                     f"{ctx.author.mention} 아래 문장을 입력하세요. "
-                    f"(제한 시간 {TYPING_TIMEOUT_SECONDS}초, "
+                    f"(제한 시간 {TYPING_TIMEOUT_SECONDS // 60}분, "
                     "삽입된 특수기호는 입력하지 마세요.)\n"
                     f"> {marked_example}"
                 )
@@ -281,14 +286,11 @@ class TypingGameCog(commands.Cog):
                             return
                         answer_message = answer_task.result()
                 except asyncio.TimeoutError:
-                    last_result = (
-                        "시간 초과! 이번 예문은 진행도에 반영되지 않았습니다."
-                    )
+                    timeout_message = "시간 초과!"
                     if infinite:
-                        example_offset += 1
-                        continue
+                        timeout_message += " 무한타자연습을 종료합니다."
                     await session_message.edit(
-                        content=last_result,
+                        content=join_parts(last_result, timeout_message),
                         allowed_mentions=allowed_mentions,
                     )
                     return
