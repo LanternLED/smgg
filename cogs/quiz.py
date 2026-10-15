@@ -437,12 +437,12 @@ class QuizCog(commands.Cog):
                             f"{view.display_name} 무한퀴즈에서 탈출했습니다."),
                         view=view,
                     )
-            await ctx.send("무한퀴즈에서 탈출했습니다.")
+            # 탈출 문구는 퀴즈/타자 세션 메시지가 직접 띄우므로 별도 안내는 보내지 않는다.
             return
 
         typing_cog = self.bot.get_cog("TypingGameCog")
         if typing_cog is not None and typing_cog.request_escape(user_id):
-            await ctx.send("무한타자연습에서 탈출했습니다.")
+            # 탈출 문구는 타자연습 세션 메시지가 직접 띄운다.
             return
         await ctx.send("진행 중인 무한퀴즈 또는 무한타자연습이 없습니다.", delete_after=5)
 

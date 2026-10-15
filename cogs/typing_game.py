@@ -23,6 +23,7 @@ from utils import (
 DICTIONARY_DB_PATH = "dictionary.db"
 TYPING_TIMEOUT_SECONDS = 60
 TYPING_MARKERS = ("§", "※", "◆", "◇", "★", "☆", "♠", "♣", "♥", "♦")
+ESCAPE_MESSAGE = "무한타자연습에서 탈출했습니다."
 logger = logging.getLogger(__name__)
 active_typing_sessions: set[str] = set()
 typing_escape_events: dict[str, asyncio.Event] = {}
@@ -90,12 +91,17 @@ def load_example(example_id: int) -> str:
     return row[0]
 
 
+def join_parts(*parts: str) -> str:
+    return "\n\n".join(part for part in parts if part)
+
+
 def normalize_typing_text(text: str) -> str:
     normalized = unicodedata.normalize("NFC", text)
     return re.sub(r"\s+", " ", normalized).strip()
 
 
-def insert_typing_marker(text: str) -> str:
+def insert_typing_markers(text: str) -> str:
+    """예문에 특수기호를 삽입한다. 기본 1개 + 10글자마다 1개씩 추가."""
     markers = tuple(marker for marker in TYPING_MARKERS if marker not in text)
     if not markers:
         markers = tuple(
@@ -104,30 +110,46 @@ def insert_typing_marker(text: str) -> str:
             if unicodedata.category(chr(codepoint)).startswith("S")
             and chr(codepoint) not in text
         )
-    marker = random.choice(markers or TYPING_MARKERS)
-    position = random.randrange(len(text) + 1)
-    return f"{text[:position]}{marker}{text[position:]}"
+    markers = markers or TYPING_MARKERS
+
+    marker_count = min(1 + len(text) // 10, len(text) + 1)
+    # 뒤에서부터 끼워 넣어야 앞쪽 삽입 위치가 밀리지 않는다.
+    positions = sorted(random.sample(range(len(text) + 1), marker_count), reverse=True)
+    for position in positions:
+        text = f"{text[:position]}{random.choice(markers)}{text[position:]}"
+    return text
 
 
-def levenshtein_distance(left: str, right: str) -> int:
+def typing_edit_distance(left: str, right: str) -> int:
+    """자모 단위 편집 거리 (Damerau-Levenshtein, OSA 방식).
+
+    오타(치환), 추가 입력(삽입), 누락(삭제), 인접한 자모의 순서 바뀜(전위)을
+    각각 1로 센다.
+    """
     left = unicodedata.normalize("NFD", left)
     right = unicodedata.normalize("NFD", right)
-    if len(left) < len(right):
-        left, right = right, left
 
+    two_rows_ago: list[int] | None = None
     previous_row = list(range(len(right) + 1))
     for left_index, left_char in enumerate(left, start=1):
         current_row = [left_index]
         for right_index, right_char in enumerate(right, start=1):
             substitution_cost = 0 if left_char == right_char else 1
-            current_row.append(
-                min(
-                    previous_row[right_index] + 1,
-                    current_row[right_index - 1] + 1,
-                    previous_row[right_index - 1] + substitution_cost,
-                )
+            best = min(
+                previous_row[right_index] + 1,
+                current_row[right_index - 1] + 1,
+                previous_row[right_index - 1] + substitution_cost,
             )
-        previous_row = current_row
+            if (
+                two_rows_ago is not None
+                and left_index > 1
+                and right_index > 1
+                and left_char == right[right_index - 2]
+                and left[left_index - 2] == right_char
+            ):
+                best = min(best, two_rows_ago[right_index - 2] + 1)
+            current_row.append(best)
+        two_rows_ago, previous_row = previous_row, current_row
     return previous_row[-1]
 
 
@@ -187,16 +209,8 @@ class TypingGameCog(commands.Cog):
             accuracy_count = 0
             while True:
                 if escape_event is not None and escape_event.is_set():
-                    content = "\n\n".join(
-                        part
-                        for part in (
-                            last_result,
-                            "무한 타자연습에서 탈출했습니다.",
-                        )
-                        if part
-                    )
                     await session_message.edit(
-                        content=content,
+                        content=join_parts(last_result, ESCAPE_MESSAGE),
                         allowed_mentions=allowed_mentions,
                     )
                     return
@@ -212,18 +226,15 @@ class TypingGameCog(commands.Cog):
                 if not target:
                     raise ValueError(f"예문 ID {example_id}의 내용이 비어 있습니다.")
 
-                marked_example = insert_typing_marker(target)
+                marked_example = insert_typing_markers(target)
                 prompt = (
                     f"{ctx.author.mention} 아래 문장을 입력하세요. "
                     f"(제한 시간 {TYPING_TIMEOUT_SECONDS}초, "
                     "삽입된 특수기호는 입력하지 마세요.)\n"
                     f"> {marked_example}"
                 )
-                content = "\n\n".join(
-                    part for part in (last_result, prompt) if part
-                )
                 await session_message.edit(
-                    content=content,
+                    content=join_parts(last_result, prompt),
                     allowed_mentions=allowed_mentions,
                 )
 
@@ -251,16 +262,8 @@ class TypingGameCog(commands.Cog):
                             task.cancel()
                         await asyncio.gather(*pending, return_exceptions=True)
                         if escape_task in done and escape_event.is_set():
-                            content = "\n\n".join(
-                                part
-                                for part in (
-                                    last_result,
-                                    "무한 타자연습에서 탈출했습니다.",
-                                )
-                                if part
-                            )
                             await session_message.edit(
-                                content=content,
+                                content=join_parts(last_result, ESCAPE_MESSAGE),
                                 allowed_mentions=allowed_mentions,
                             )
                             return
@@ -289,7 +292,7 @@ class TypingGameCog(commands.Cog):
 
                 answer = normalize_typing_text(answer_message.content)
                 distance = await asyncio.to_thread(
-                    levenshtein_distance,
+                    typing_edit_distance,
                     target,
                     answer,
                 )
@@ -311,20 +314,14 @@ class TypingGameCog(commands.Cog):
                     )
                     await async_save_scores(user_id, user_scores)
 
-                cycle_progress = user_scores["typing"] % len(self.example_ids)
-                if cycle_progress == 0:
-                    cycle_progress = len(self.example_ids)
-                cycle_count = (user_scores["typing"] - 1) // len(self.example_ids) + 1
-                bonus_notice = f" (부스터 +{booster_bonus})" if booster_bonus > 0 else ""
+                bonus_str = f" (부스터 +{booster_bonus})" if booster_bonus > 0 else ""
                 accuracy_result = f"이번 문장 정확도 **{accuracy:.1%}**"
                 if infinite:
                     accuracy_result += f" · 세션 평균 정확도 **{average_accuracy:.1%}**"
+                # 점수 문구는 퀴즈(cogs/quiz.py)와 동일한 형식
                 last_result = (
-                    f"{ctx.author.mention} {accuracy_result} "
-                    f"(자모 편집 거리 {distance}) — **+{score}점**{bonus_notice}\n"
-                    f"진행도: {cycle_progress:,}/{len(self.example_ids):,} "
-                    f"(전체 {user_scores['typing']:,}회, {cycle_count}회차) · "
-                    f"보유 칩: {user_scores['chips']:,}"
+                    f"{ctx.author.display_name} {accuracy_result}\n"
+                    f"(+{score}{bonus_str}) (보유 칩: {user_scores['chips']})"
                 )
                 if not infinite:
                     await session_message.edit(
@@ -336,10 +333,9 @@ class TypingGameCog(commands.Cog):
             logger.exception("타자연습 진행 중 오류 발생 (user_id=%s)", user_id)
             error_message = "타자연습을 진행하지 못했습니다. 잠시 후 다시 시도해주세요."
             if session_message is not None:
-                content = "\n\n".join(
-                    part for part in (last_result, error_message) if part
+                await session_message.edit(
+                    content=join_parts(last_result, error_message)
                 )
-                await session_message.edit(content=content)
             else:
                 await ctx.send(error_message)
         finally:
