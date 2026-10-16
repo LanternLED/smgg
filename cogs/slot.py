@@ -118,7 +118,7 @@ def render_board_static(
 class SlotView(discord.ui.View):
     def __init__(
         self, user_id, slot_msg=None, *, rows=3, cols=5, bet=1000,
-        allow_replay=True, replay_cooldown=0,
+        allow_replay=True, replay_cooldown=0, replay_cooldown_end_timestamp=None,
     ):
         super().__init__(timeout=600)
         self.user_id = str(user_id)
@@ -128,6 +128,7 @@ class SlotView(discord.ui.View):
         self.bet = bet
         self.allow_replay = allow_replay
         self.replay_cooldown = replay_cooldown
+        self.replay_cooldown_end_timestamp = replay_cooldown_end_timestamp
         self.is_rolling = False
         self.slotmsg = ""
         self.slotmsg2 = ""
@@ -254,7 +255,15 @@ class SlotView(discord.ui.View):
                 user_scores["chips"] = int(user_scores.get("chips", 0) or 0) - self.bet
 
                 if reward > 0:
-                    bonus = apply_game_reward(user_scores, reward, exp_rate=0.02)
+                    net_gain = max(0, reward - self.bet)
+                    bonus = apply_game_reward(
+                        user_scores,
+                        reward,
+                        exp_rate=0.02,
+                        exp_gain=net_gain,
+                        booster_gain=net_gain,
+                        booster_exp_rate=0,
+                    )
                 else:
                     bonus = 0
                 await async_save_scores(self.user_id, user_scores)
@@ -277,7 +286,11 @@ class SlotView(discord.ui.View):
 
             cooldown_end_timestamp = None
             if self.allow_replay and self.replay_cooldown > 0:
-                cooldown_end_timestamp = time.time() + self.replay_cooldown
+                cooldown_end_timestamp = (
+                    self.replay_cooldown_end_timestamp
+                    if self.replay_cooldown_end_timestamp is not None
+                    else time.time() + self.replay_cooldown
+                )
 
             pull_button = next(
                 (item for item in self.children
@@ -393,8 +406,9 @@ class SlotCog(commands.Cog):
         view.control_msg = control_msg
 
     @commands.command(name='빅슬롯')
-    @commands.cooldown(1, 60, commands.BucketType.user)
+    @commands.cooldown(1, BIG_SLOT_REPLAY_COOLDOWN, commands.BucketType.user)
     async def show_big_slot(self, ctx):
+        cooldown_end_timestamp = time.time() + BIG_SLOT_REPLAY_COOLDOWN
         booster_result = await async_grant_daily_booster(str(ctx.author.id))
         booster_notice = format_booster_gain(booster_result)
         if booster_notice:
@@ -409,6 +423,7 @@ class SlotCog(commands.Cog):
             cols=BIG_SLOT_COLS,
             bet=3500,
             replay_cooldown=BIG_SLOT_REPLAY_COOLDOWN,
+            replay_cooldown_end_timestamp=cooldown_end_timestamp,
         )
         control_msg = await ctx.send(
             f"{ctx.author.mention} **3,500 CHIPS BET!**",

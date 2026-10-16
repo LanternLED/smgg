@@ -21,7 +21,6 @@ from discord.ext import commands
 from cogs.typing_game import (
     insert_typing_markers,
     join_parts,
-    normalize_typing_text,
     typing_edit_distance,
 )
 from utils import (
@@ -56,8 +55,8 @@ def make_title_key(text: str) -> str:
 
 
 def count_chars(text: str) -> int:
-    """필사에서 실제로 치는 글자 수 (괄호 안 내용·공백 제외)."""
-    return len(re.sub(r"\s", "", normalize_typing_text(text)))
+    """필사에서 실제로 치는 글자 수 (공백 제외)."""
+    return len(re.sub(r"\s", "", clean_input(text)))
 
 
 def format_duration(seconds: int) -> str:
@@ -159,15 +158,13 @@ def work_stats(work_id: int) -> tuple[int, int, str | None]:
     """(문장 수, 총 글자수, 마지막 문장)."""
     conn = get_db_connection()
     try:
-        row = conn.execute(
-            "SELECT COUNT(*), COALESCE(SUM(chars), 0) FROM work_sentences WHERE work_id = ?",
+        rows = conn.execute(
+            "SELECT content FROM work_sentences WHERE work_id = ? ORDER BY seq",
             (work_id,),
-        ).fetchone()
-        last = conn.execute(
-            "SELECT content FROM work_sentences WHERE work_id = ? ORDER BY seq DESC LIMIT 1",
-            (work_id,),
-        ).fetchone()
-        return int(row[0]), int(row[1]), (last[0] if last is not None else None)
+        ).fetchall()
+        contents = [row[0] for row in rows]
+        total_chars = sum(count_chars(content) for content in contents)
+        return len(contents), total_chars, (contents[-1] if contents else None)
     finally:
         conn.close()
 
@@ -189,20 +186,29 @@ def add_sentence(work_id: int, content: str, chars: int) -> int:
         conn.close()
 
 
-def delete_last_sentence(work_id: int) -> tuple[int, str] | None:
+def delete_last_sentence(work_id: int) -> tuple[int, str, tuple[int, str] | None] | None:
     conn = get_db_connection()
     try:
-        row = conn.execute(
-            "SELECT seq, content FROM work_sentences WHERE work_id = ? ORDER BY seq DESC LIMIT 1",
+        conn.execute("BEGIN IMMEDIATE")
+        sentence_rows = conn.execute(
+            "SELECT seq, content FROM work_sentences "
+            "WHERE work_id = ? ORDER BY seq DESC LIMIT 2",
             (work_id,),
-        ).fetchone()
-        if row is None:
+        ).fetchall()
+        if not sentence_rows:
             return None
+        deleted = sentence_rows[0]
+        previous = (
+            (int(sentence_rows[1]["seq"]), str(sentence_rows[1]["content"]))
+            if len(sentence_rows) > 1
+            else None
+        )
         conn.execute(
-            "DELETE FROM work_sentences WHERE work_id = ? AND seq = ?", (work_id, row["seq"])
+            "DELETE FROM work_sentences WHERE work_id = ? AND seq = ?",
+            (work_id, deleted["seq"]),
         )
         conn.commit()
-        return int(row["seq"]), str(row["content"])
+        return int(deleted["seq"]), str(deleted["content"]), previous
     finally:
         conn.close()
 
@@ -555,7 +561,7 @@ class TranscribeCog(commands.Cog):
                 f"현재 {sentence_count}문장 · {char_count}자"
             )
             if last is not None:
-                notice += f"\n마지막 문장: {plain(shorten(last, 100))}"
+                notice += f"\n마지막 문장: {plain(last)}"
             notice += "\n이어서 한 문장씩 입력하세요."
             await ctx.send(notice, allowed_mentions=no_mentions)
         else:
@@ -618,9 +624,15 @@ class TranscribeCog(commands.Cog):
         if deleted is None:
             await ctx.send("삭제할 문장이 없습니다.", delete_after=5)
             return
-        seq, content = deleted
+        seq, content, previous = deleted
+        previous_note = (
+            f"📌 바로 앞 문장 ({previous[0]}번째):\n> {plain(previous[1])}\n"
+            if previous is not None
+            else ""
+        )
         await ctx.send(
-            f"🗑️ {seq}번째 문장을 삭제했습니다.\n> {plain(content)}\n수정할 문장을 입력해주세요.",
+            f"{previous_note}🗑️ {seq}번째 문장을 삭제했습니다.\n"
+            f"> {plain(content)}\n수정할 문장을 입력해주세요.",
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
@@ -724,7 +736,7 @@ class TranscribeCog(commands.Cog):
             if escape_event.is_set():
                 await stop_with(f"필사를 중단했습니다. ({pos}/{total} 진행, 다음에 이어서 하실 수 있습니다.)")
                 return
-            target = normalize_typing_text(sentences[pos])
+            target = clean_input(sentences[pos])
             if not target:
                 pos += 1
                 await asyncio.to_thread(save_progress, user_id, work_id, pos, accuracy_sum, answered)
@@ -752,7 +764,7 @@ class TranscribeCog(commands.Cog):
                 return
             await delete_message(answer_message)
 
-            answer = normalize_typing_text(answer_message.content)
+            answer = clean_input(answer_message.content)
             distance = await asyncio.to_thread(typing_edit_distance, target, answer)
             phoneme_count = len(unicodedata.normalize("NFD", target))
             score = max(0, phoneme_count - distance) // 3

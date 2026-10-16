@@ -29,7 +29,15 @@ def apply_spin_reward(user_scores: dict, reward: int, *, spin_cost: int = 50, ex
     user_scores["chips"] = int(user_scores.get("chips", 0) or 0) - spin_cost
     user_scores["chips"] = max(0, user_scores["chips"])
     if reward > 0:
-        return apply_game_reward(user_scores, reward, exp_rate=exp_rate)
+        net_gain = max(0, reward - spin_cost)
+        return apply_game_reward(
+            user_scores,
+            reward,
+            exp_rate=exp_rate,
+            exp_gain=net_gain,
+            booster_gain=net_gain,
+            booster_exp_rate=0,
+        )
     return 0
 
 

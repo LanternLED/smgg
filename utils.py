@@ -1,6 +1,5 @@
 import sqlite3
 import asyncio
-import math
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
@@ -13,17 +12,7 @@ CHIP_SELL_COST = 1111      # 1시간(score) 구매에 필요한 칩
 # ── 부스터 ──────────────────────────────────────────────────────
 BOOSTER_BASE_GAIN = 1000    # 하루 첫 상호작용 시 기본 지급량
 BOOSTER_DECAY = 0.95         # 밀린 날짜의 감쇠율
-
-# N%(미니게임 보상 부스팅 소모율) 곡선: 두 기준점을 지나는 로그 곡선
-# 튜플 구조: (부스터 보유량 기준, 소모 가능 비율 N%)
-BOOSTER_N_REF_LOW = (1000, 10)
-BOOSTER_N_REF_HIGH = (100000, 500)
-BOOSTER_N_MAX = BOOSTER_N_REF_HIGH[1]  # 최대 비율(500%)
-
-# (비율2 - 비율1) / log(수치2 / 수치1)
-_N_LOG_K = (BOOSTER_N_REF_HIGH[1] - BOOSTER_N_REF_LOW[1]) / math.log(
-    BOOSTER_N_REF_HIGH[0] / BOOSTER_N_REF_LOW[0]
-)
+BOOSTER_BASE_BONUS_PERCENT = 20
 
 # ── 유저 단위 락 ────────────────────────────────────────────────
 # load_scores → (메모리 상에서 수정) → save_scores 사이 구간은 DB
@@ -60,38 +49,38 @@ def _coerce_int(value, default=0) -> int:
         return default
 
 
-def calc_booster_gain(days_passed: int) -> int:
-    """밀린 일수만큼 감쇠 지급."""
+def calc_booster_gain(days_passed: int, level: int = 0) -> int:
+    """Calculate accumulated daily boosters using the current player level."""
     total = 0
     for i in range(days_passed):
-        total += int(BOOSTER_BASE_GAIN * pow(BOOSTER_DECAY, i))
+        daily_gain = BOOSTER_BASE_GAIN + max(0, _coerce_int(level, 0))
+        total += int(daily_gain * pow(BOOSTER_DECAY, i))
     return total
 
 
-def booster_n_percent(booster: int) -> float:
-    """보유 부스터량에 따른 소모 가능 비율(%)."""
+def booster_n_percent(booster: int) -> int:
+    """Return the total booster bonus percentage for the current balance."""
     if booster <= 0:
-        return 0.0
-    ref_amount, ref_percent = BOOSTER_N_REF_LOW
-    # 비율 계산 공식 적용
-    n = ref_percent + _N_LOG_K * math.log(booster / ref_amount)
-    return max(0.0, min(float(BOOSTER_N_MAX), n))
+        return 0
+    exponent = len(str(booster)) - 1
+    return BOOSTER_BASE_BONUS_PERCENT + exponent
 
 
-def apply_booster(user_scores: dict, chip_gain: int) -> int:
+def apply_booster(user_scores: dict, chip_gain: int, *, exp_rate: float = 0.1) -> int:
     """미니게임 획득 칩 보상에 부스터 소모 및 추가 지급 적용."""
     booster_val = _coerce_int(user_scores.get("booster"), 0)
     if chip_gain <= 0 or booster_val <= 0:
         return 0
-    n_percent = booster_n_percent(booster_val)
-    max_consumable = int(chip_gain * n_percent / 100)
-    consumed = min(max_consumable, booster_val)
-    if consumed <= 0:
+    bonus = min(
+        booster_val,
+        chip_gain * booster_n_percent(booster_val) // 100,
+    )
+    if bonus <= 0:
         return 0
-    user_scores["booster"] = booster_val - consumed
-    user_scores["chips"] = _coerce_int(user_scores.get("chips"), 0) + consumed
-    user_scores["exp"] = _coerce_int(user_scores.get("exp"), 0) + int(consumed * 0.1)
-    return consumed
+    user_scores["booster"] = booster_val - bonus
+    user_scores["chips"] = _coerce_int(user_scores.get("chips"), 0) + bonus
+    user_scores["exp"] = _coerce_int(user_scores.get("exp"), 0) + int(bonus * exp_rate)
+    return bonus
 
 
 def apply_level_ups(user_scores: dict) -> bool:
@@ -110,15 +99,25 @@ def apply_level_ups(user_scores: dict) -> bool:
     return leveled_up
 
 
-def apply_game_reward(user_scores: dict, chip_gain: int, *, exp_rate: float = 0.1) -> int:
+def apply_game_reward(
+    user_scores: dict,
+    chip_gain: int,
+    *,
+    exp_rate: float = 0.1,
+    exp_gain: int | None = None,
+    booster_gain: int | None = None,
+    booster_exp_rate: float = 0.1,
+) -> int:
     """Apply a mini-game reward and optionally amplify it with booster."""
     base_chip_gain = int(chip_gain)
     if base_chip_gain <= 0:
         return 0
 
     user_scores["chips"] = _coerce_int(user_scores.get("chips"), 0) + base_chip_gain
-    user_scores["exp"] = _coerce_int(user_scores.get("exp"), 0) + int(base_chip_gain * exp_rate)
-    bonus = apply_booster(user_scores, base_chip_gain)
+    exp_base = base_chip_gain if exp_gain is None else max(0, _coerce_int(exp_gain, 0))
+    booster_base = base_chip_gain if booster_gain is None else max(0, _coerce_int(booster_gain, 0))
+    user_scores["exp"] = _coerce_int(user_scores.get("exp"), 0) + int(exp_base * exp_rate)
+    bonus = apply_booster(user_scores, booster_base, exp_rate=booster_exp_rate)
     apply_level_ups(user_scores)
     return bonus
 
@@ -282,7 +281,10 @@ def grant_daily_booster(user_scores: dict):
         return 0
 
     days_passed = max(1, (today - last_date).days)
-    gained = calc_booster_gain(days_passed)
+    gained = calc_booster_gain(
+        days_passed,
+        _coerce_int(user_scores.get("level"), 0),
+    )
     user_scores["booster"] = _coerce_int(user_scores.get("booster"), 0) + gained
     user_scores["daily_update"] = today.isoformat()
     return gained
