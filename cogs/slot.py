@@ -118,7 +118,7 @@ def render_board_static(
 class SlotView(discord.ui.View):
     def __init__(
         self, user_id, slot_msg=None, *, rows=3, cols=5, bet=1000,
-        allow_replay=True, replay_cooldown=0, replay_cooldown_end_timestamp=None,
+        allow_replay=True, replay_cooldown=0,
     ):
         super().__init__(timeout=600)
         self.user_id = str(user_id)
@@ -128,7 +128,6 @@ class SlotView(discord.ui.View):
         self.bet = bet
         self.allow_replay = allow_replay
         self.replay_cooldown = replay_cooldown
-        self.replay_cooldown_end_timestamp = replay_cooldown_end_timestamp
         self.is_rolling = False
         self.slotmsg = ""
         self.slotmsg2 = ""
@@ -286,11 +285,9 @@ class SlotView(discord.ui.View):
 
             cooldown_end_timestamp = None
             if self.allow_replay and self.replay_cooldown > 0:
-                cooldown_end_timestamp = (
-                    self.replay_cooldown_end_timestamp
-                    if self.replay_cooldown_end_timestamp is not None
-                    else time.time() + self.replay_cooldown
-                )
+                # 판마다 결과 확정 시점부터 새로 계산한다. (세션 시작 시각 고정값을
+                # 재사용하면 2번째 판부터 이미 지난 시각이라 쿨타임이 0초가 된다.)
+                cooldown_end_timestamp = time.time() + self.replay_cooldown
 
             pull_button = next(
                 (item for item in self.children
@@ -408,7 +405,6 @@ class SlotCog(commands.Cog):
     @commands.command(name='빅슬롯')
     @commands.cooldown(1, BIG_SLOT_REPLAY_COOLDOWN, commands.BucketType.user)
     async def show_big_slot(self, ctx):
-        cooldown_end_timestamp = time.time() + BIG_SLOT_REPLAY_COOLDOWN
         booster_result = await async_grant_daily_booster(str(ctx.author.id))
         booster_notice = format_booster_gain(booster_result)
         if booster_notice:
@@ -423,7 +419,6 @@ class SlotCog(commands.Cog):
             cols=BIG_SLOT_COLS,
             bet=3500,
             replay_cooldown=BIG_SLOT_REPLAY_COOLDOWN,
-            replay_cooldown_end_timestamp=cooldown_end_timestamp,
         )
         control_msg = await ctx.send(
             f"{ctx.author.mention} **3,500 CHIPS BET!**",

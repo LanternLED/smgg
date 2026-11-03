@@ -1,5 +1,6 @@
 import sqlite3
 import asyncio
+import math
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
@@ -81,6 +82,14 @@ def apply_booster(user_scores: dict, chip_gain: int, *, exp_rate: float = 0.1) -
     user_scores["chips"] = _coerce_int(user_scores.get("chips"), 0) + bonus
     user_scores["exp"] = _coerce_int(user_scores.get("exp"), 0) + int(bonus * exp_rate)
     return bonus
+
+
+def level_reward_bonus(level) -> int:
+    """Return a small level-based bonus for quiz and typing rewards."""
+    level = _coerce_int(level, 0)
+    if level < 1:
+        return 1
+    return (1 + math.isqrt(8 * level - 7)) // 2
 
 
 def apply_level_ups(user_scores: dict) -> bool:

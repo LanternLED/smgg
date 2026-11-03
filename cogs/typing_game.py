@@ -18,6 +18,7 @@ from utils import (
     format_booster_gain,
     get_db_connection,
     get_user_lock,
+    level_reward_bonus,
 )
 
 DICTIONARY_DB_PATH = "dictionary.db"
@@ -317,6 +318,15 @@ class TypingGameCog(commands.Cog):
                 async with get_user_lock(user_id):
                     user_scores = await async_check_level(user_id)
                     user_scores["typing"] = int(user_scores.get("typing", 0) or 0) + 1
+                    # 레벨 보너스는 점수가 있는 입력에만 얹는다.
+                    if score > 0:
+                        score += level_reward_bonus(user_scores.get("level"))
+                    # 1회전 안에서 100개 완성마다 누적 개수의 제곱근만큼 칩을 지급한다.
+                    cycle_count = user_scores["typing"] % len(self.example_ids)
+                    milestone_bonus = 0
+                    if score > 0 and cycle_count > 0 and cycle_count % 100 == 0:
+                        milestone_bonus = math.isqrt(cycle_count)
+                        user_scores["chips"] = int(user_scores.get("chips", 0) or 0) + milestone_bonus
                     if infinite:
                         accuracy_sum += accuracy
                         accuracy_count += 1
@@ -337,6 +347,8 @@ class TypingGameCog(commands.Cog):
                     f"{ctx.author.display_name} {accuracy_result}\n"
                     f"(+{score}{bonus_str}) (보유 칩: {user_scores['chips']})"
                 )
+                if milestone_bonus > 0:
+                    last_result += f"\n🏁 {cycle_count:,}문장 달성! 보너스 +{milestone_bonus:,} 칩"
                 if not infinite:
                     await session_message.edit(
                         content=last_result,

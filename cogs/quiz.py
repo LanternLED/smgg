@@ -7,7 +7,7 @@ import re
 import logging
 from utils import (
     async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_booster_gain,
+    apply_game_reward, format_booster_gain, level_reward_bonus,
 )
 
 QUIZ_DB_PATH = "dictionary.db"
@@ -217,6 +217,7 @@ class QuizButton(discord.ui.Button):
         if self.index == view.correct_idx:
             user_scores["quiz_streak"] += 1
             reward = calculate_quiz_reward(user_scores["quiz_streak"])
+            reward += level_reward_bonus(user_scores.get("level"))
             bonus = apply_game_reward(user_scores, reward, exp_rate=0.5)
             bonus_str = f" (부스터 +{bonus})" if bonus > 0 else ""
             result_msg = f"{view.display_name} ⭕ '{view.definition}'의 뜻을 가진 단어는?\n(+{reward}{bonus_str}) (보유 칩: {user_scores['chips']})"
