@@ -18,10 +18,13 @@ logger = logging.getLogger(__name__)
 
 def calculate_quiz_reward(streak):
     if streak <= 10:
-        return -2 + streak * 3
-    if streak <= 20:
-        return 28 + (streak - 10) * 2
-    return 50 + (streak - 21)
+        return -3 + streak * 4
+    elif streak <= 20:
+        return 37 + (streak - 10) * 3
+    elif streak <= 30:
+            return 67 + (streak - 20) * 2
+    else:
+        return 87 + (streak - 30)
 
 def get_quiz_db_connection():
     conn = sqlite3.connect(QUIZ_DB_PATH)

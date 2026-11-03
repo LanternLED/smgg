@@ -78,6 +78,16 @@ def get_example_id(user_id: str, progress: int, example_ids: tuple[int, ...]) ->
     return example_ids[index]
 
 
+def get_next_typing_milestone(completed_count: int, cycle_length: int) -> int:
+    cycle_count = completed_count % cycle_length
+    next_cycle_milestone = (cycle_count // 100 + 1) * 100
+    if next_cycle_milestone > cycle_length:
+        distance = cycle_length - cycle_count + 100
+    else:
+        distance = next_cycle_milestone - cycle_count
+    return completed_count + distance
+
+
 def load_example(example_id: int) -> str:
     conn = sqlite3.connect(DICTIONARY_DB_PATH)
     try:
@@ -312,21 +322,35 @@ class TypingGameCog(commands.Cog):
                     answer,
                 )
                 phoneme_count = len(unicodedata.normalize("NFD", target))
-                score = max(0, phoneme_count - distance) // 3
+                score = max(0, phoneme_count - distance) // 2
                 accuracy = max(0.0, 1.0 - distance / phoneme_count)
 
                 async with get_user_lock(user_id):
                     user_scores = await async_check_level(user_id)
                     user_scores["typing"] = int(user_scores.get("typing", 0) or 0) + 1
+                    completed_count = user_scores["typing"]
                     # 레벨 보너스는 점수가 있는 입력에만 얹는다.
                     if score > 0:
                         score += level_reward_bonus(user_scores.get("level"))
                     # 1회전 안에서 100개 완성마다 누적 개수의 제곱근만큼 칩을 지급한다.
-                    cycle_count = user_scores["typing"] % len(self.example_ids)
+                    cycle_count = completed_count % len(self.example_ids)
                     milestone_bonus = 0
                     if score > 0 and cycle_count > 0 and cycle_count % 100 == 0:
                         milestone_bonus = math.isqrt(cycle_count)
-                        user_scores["chips"] = int(user_scores.get("chips", 0) or 0) + milestone_bonus
+                    cycle_length = len(self.example_ids)
+                    completed_cycles = completed_count // cycle_length
+                    previous_completed_cycles = (completed_count - 1) // cycle_length
+                    cycle_completion_bonus = 0
+                    if score > 0 and completed_cycles > previous_completed_cycles:
+                        cycle_completion_bonus = (
+                            completed_cycles - previous_completed_cycles
+                        ) * 10_000
+                    if milestone_bonus or cycle_completion_bonus:
+                        user_scores["chips"] = (
+                            int(user_scores.get("chips", 0) or 0)
+                            + milestone_bonus
+                            + cycle_completion_bonus
+                        )
                     if infinite:
                         accuracy_sum += accuracy
                         accuracy_count += 1
@@ -345,10 +369,17 @@ class TypingGameCog(commands.Cog):
                 # 점수 문구는 퀴즈(cogs/quiz.py)와 동일한 형식
                 last_result = (
                     f"{ctx.author.display_name} {accuracy_result}\n"
-                    f"(+{score}{bonus_str}) (보유 칩: {user_scores['chips']})"
+                    f"(+{score}{bonus_str}) (보유 칩: {user_scores['chips']})\n"
+                    f"완성한 문장: {completed_count:,}/"
+                    f"{get_next_typing_milestone(completed_count, len(self.example_ids)):,}"
                 )
                 if milestone_bonus > 0:
                     last_result += f"\n🏁 {cycle_count:,}문장 달성! 보너스 +{milestone_bonus:,} 칩"
+                if cycle_completion_bonus > 0:
+                    last_result += (
+                        f"\n🏆 {completed_cycles:,}사이클 완주! "
+                        f"보너스 +{cycle_completion_bonus:,} 칩"
+                    )
                 if not infinite:
                     await session_message.edit(
                         content=last_result,
