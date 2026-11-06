@@ -345,12 +345,6 @@ class TypingGameCog(commands.Cog):
                         cycle_completion_bonus = (
                             completed_cycles - previous_completed_cycles
                         ) * 10_000
-                    if milestone_bonus or cycle_completion_bonus:
-                        user_scores["chips"] = (
-                            int(user_scores.get("chips", 0) or 0)
-                            + milestone_bonus
-                            + cycle_completion_bonus
-                        )
                     if infinite:
                         accuracy_sum += accuracy
                         accuracy_count += 1
@@ -360,6 +354,17 @@ class TypingGameCog(commands.Cog):
                         score,
                         exp_rate=0.5,
                     )
+                    goal_reward = milestone_bonus + cycle_completion_bonus
+                    goal_booster_bonus = 0
+                    if goal_reward > 0:
+                        goal_booster_bonus = apply_game_reward(
+                            user_scores,
+                            goal_reward,
+                            exp_rate=0,
+                            exp_gain=0,
+                            booster_gain=goal_reward,
+                            booster_exp_rate=0,
+                        )
                     await async_save_scores(user_id, user_scores)
 
                 bonus_str = f" (부스터 +{booster_bonus})" if booster_bonus > 0 else ""
@@ -380,6 +385,8 @@ class TypingGameCog(commands.Cog):
                         f"\n🏆 {completed_cycles:,}사이클 완주! "
                         f"보너스 +{cycle_completion_bonus:,} 칩"
                     )
+                if goal_booster_bonus > 0:
+                    last_result += f"\n⚡ 목표 보상 부스터 +{goal_booster_bonus:,}"
                 if not infinite:
                     await session_message.edit(
                         content=last_result,

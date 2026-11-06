@@ -25,19 +25,25 @@ SYMBOL_WEIGHTS = {
 
 
 def apply_spin_reward(user_scores: dict, reward: int, *, spin_cost: int = 50, exp_rate: float = 0.02) -> int:
-    """Apply minislot reward in the same shared flow as other minigames."""
+    """Apply a reduced minislot payout and convert the withheld amount to booster."""
     user_scores["chips"] = int(user_scores.get("chips", 0) or 0) - spin_cost
     user_scores["chips"] = max(0, user_scores["chips"])
     if reward > 0:
+        booster_conversion = reward * 5 // 100
+        chip_reward = reward - booster_conversion
+        user_scores["booster"] = (
+            int(user_scores.get("booster", 0) or 0) + booster_conversion
+        )
         net_gain = max(0, reward - spin_cost)
-        return apply_game_reward(
+        apply_game_reward(
             user_scores,
-            reward,
+            chip_reward,
             exp_rate=exp_rate,
             exp_gain=net_gain,
-            booster_gain=net_gain,
+            booster_gain=0,
             booster_exp_rate=0,
         )
+        return chip_reward
     return 0
 
 
@@ -134,11 +140,10 @@ class SlotView(discord.ui.View):
         self.slotmsg = slot_value
 
         user_scores = await async_check_level(self.user_id)
-        bonus = apply_spin_reward(user_scores, int(self.bet), spin_cost=50, exp_rate=0.05 if self.auto_spin else 0.02)
-        bonus_str = f" (부스터 +{bonus})" if bonus > 0 else ""
+        chip_reward = apply_spin_reward(user_scores, int(self.bet), spin_cost=50, exp_rate=0.05 if self.auto_spin else 0.02)
 
-        await self.msg.edit(content=f"<@{int(self.user_id)}> 칩 +{self.bet}{bonus_str} (보유 칩: {user_scores['chips']})")
-        self.slotmsg2 += f"{self.bet}칩 획득!"
+        await self.msg.edit(content=f"<@{int(self.user_id)}> 칩 +{chip_reward} (보유 칩: {user_scores['chips']})")
+        self.slotmsg2 += f"{chip_reward}칩 획득!"
         await async_save_scores(self.user_id, user_scores)
 
         if not self.auto_spin:

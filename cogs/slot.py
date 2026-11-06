@@ -254,27 +254,31 @@ class SlotView(discord.ui.View):
                 user_scores["chips"] = int(user_scores.get("chips", 0) or 0) - self.bet
 
                 if reward > 0:
+                    booster_conversion = reward * 5 // 100
+                    chip_reward = reward - booster_conversion
+                    user_scores["booster"] = (
+                        int(user_scores.get("booster", 0) or 0)
+                        + booster_conversion
+                    )
                     net_gain = max(0, reward - self.bet)
-                    bonus = apply_game_reward(
+                    apply_game_reward(
                         user_scores,
-                        reward,
+                        chip_reward,
                         exp_rate=0.02,
                         exp_gain=net_gain,
-                        booster_gain=net_gain,
+                        booster_gain=0,
                         booster_exp_rate=0,
                     )
-                else:
-                    bonus = 0
                 await async_save_scores(self.user_id, user_scores)
 
             if reward > 0:
                 if details:
-                    summary = " / ".join(details)
-                    result_text = f"🎉 **총 {reward:,} 칩 획득!** (보유 칩: {user_scores['chips']}) | {summary}"
+                    summary = " / ".join(
+                        detail.rsplit(" +", 1)[0] for detail in details
+                    )
+                    result_text = f"🎉 **총 {chip_reward:,} 칩 획득!** (보유 칩: {user_scores['chips']}) | {summary}"
                 else:
-                    result_text = f"🎉 **총 {reward:,} 칩 획득!**"
-                if bonus > 0:
-                    result_text += f" | ⚡ 부스터 +{bonus:,}"
+                    result_text = f"🎉 **총 {chip_reward:,} 칩 획득!**"
             elif details:
                 result_text = "☠️ 독!감!자! (당신은 버스트했다.)"
             else:
