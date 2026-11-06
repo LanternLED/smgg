@@ -14,7 +14,7 @@ CHIP_SELL_COST = 1111      # 1시간(score) 구매에 필요한 칩
 BOOSTER_BASE_GAIN = 1000    # 하루 첫 상호작용 시 기본 지급량
 BOOSTER_DECAY = 0.95         # 밀린 날짜의 감쇠율
 BOOSTER_BASE_BONUS_PERCENT = 20
-BOOSTER_BONUS_PER_MAGNITUDE_PERCENT = 5
+BOOSTER_BONUS_PER_MAGNITUDE_PERCENT = 10
 
 # ── 유저 단위 락 ────────────────────────────────────────────────
 # load_scores → (메모리 상에서 수정) → save_scores 사이 구간은 DB
