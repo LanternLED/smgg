@@ -394,15 +394,19 @@ class TypingGameCog(commands.Cog):
                     accuracy_result += f" · 세션 평균 정확도 **{average_accuracy:.1%}**"
                 last_result = (
                     f"{ctx.author.display_name} {accuracy_result}\n"
-                    f"{format_chip_balance(user_scores, score + goal_reward, booster_bonus + goal_booster_bonus)}\n"
+                    f"{format_chip_balance(user_scores, score, booster_bonus)}\n"
                     f"완성한 문장: {completed_count:,}/"
                     f"{get_next_typing_milestone(completed_count, len(self.example_ids)):,}"
                 )
                 if milestone_bonus > 0:
-                    last_result += f"\n🏁 {cycle_count:,}문장 달성!"
+                    last_result += (
+                        f"\n🏁 {cycle_count:,}문장 달성!"
+                        f" (+{milestone_bonus:,}|+{goal_booster_bonus:,})"
+                    )
                 if cycle_completion_bonus > 0:
                     last_result += (
                         f"\n🏆 {completed_cycles:,}사이클 완주!"
+                        f" (+{cycle_completion_bonus:,}|+{goal_booster_bonus:,})"
                     )
                 if not infinite:
                     await session_message.edit(
