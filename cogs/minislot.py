@@ -5,7 +5,7 @@ import asyncio
 import logging
 from utils import (
     async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_booster_gain,
+    apply_game_reward, format_booster_gain, format_chip_balance,
 )
 
 logger = logging.getLogger(__name__)
@@ -142,8 +142,9 @@ class SlotView(discord.ui.View):
         user_scores = await async_check_level(self.user_id)
         chip_reward = apply_spin_reward(user_scores, int(self.bet), spin_cost=50, exp_rate=0.05 if self.auto_spin else 0.02)
 
-        await self.msg.edit(content=f"<@{int(self.user_id)}> 칩 +{chip_reward} (보유 칩: {user_scores['chips']})")
-        self.slotmsg2 += f"{chip_reward}칩 획득!"
+        balance_msg = format_chip_balance(user_scores, chip_reward)
+        await self.msg.edit(content=f"<@{int(self.user_id)}> {balance_msg}")
+        self.slotmsg2 += balance_msg
         await async_save_scores(self.user_id, user_scores)
 
         if not self.auto_spin:

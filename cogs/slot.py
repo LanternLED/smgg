@@ -7,7 +7,8 @@ import time
 from slot_engine import SlotEngine
 from utils import (
     async_load_scores, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_booster_gain, get_user_lock,
+    apply_game_reward, format_booster_gain, format_chip_balance,
+    get_user_lock,
 )
 
 logger = logging.getLogger(__name__)
@@ -276,13 +277,16 @@ class SlotView(discord.ui.View):
                     summary = " / ".join(
                         detail.rsplit(" +", 1)[0] for detail in details
                     )
-                    result_text = f"🎉 **총 {chip_reward:,} 칩 획득!** (보유 칩: {user_scores['chips']}) | {summary}"
+                    result_text = f"🎉 {format_chip_balance(user_scores, chip_reward)} | {summary}"
                 else:
-                    result_text = f"🎉 **총 {chip_reward:,} 칩 획득!**"
+                    result_text = f"🎉 {format_chip_balance(user_scores, chip_reward)}"
             elif details:
-                result_text = "☠️ 독!감!자! (당신은 버스트했다.)"
+                result_text = (
+                    "☠️ 독!감!자! (당신은 버스트했다.) "
+                    f"{format_chip_balance(user_scores)}"
+                )
             else:
-                result_text = "💥 꽝"
+                result_text = f"💥 꽝 {format_chip_balance(user_scores)}"
 
             self.slotmsg = final_board_text
             self.slotmsg2 = result_text

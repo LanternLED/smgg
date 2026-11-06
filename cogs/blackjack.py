@@ -6,7 +6,7 @@ import os
 import json
 from utils import (
     async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_booster_gain,
+    apply_game_reward, format_booster_gain, format_chip_balance,
 )
 
 active_blackjack_games = {}
@@ -241,10 +241,9 @@ class BlackjackCog(commands.Cog):
 
             if game.bet >= 0:
                 bonus = apply_game_reward(user_scores, int(abs(game.bet)), exp_rate=0.05)
-                bonus_str = f" (부스터 +{bonus})" if bonus > 0 else ""
-                msg2_value += f"\n칩 +{game.bet}{bonus_str} (보유 칩: {user_scores['chips']})"
+                msg2_value += f"\n{format_chip_balance(user_scores, game.bet, bonus)}"
             else:
-                msg2_value += f"\n칩 {game.bet} (보유 칩: {user_scores['chips']})"
+                msg2_value += f"\n{format_chip_balance(user_scores)}"
 
             final_embed = discord.Embed(title="블랙잭 결과", description=msg2_value)
             final_embed.add_field(name="플레이어 최종", value=f"{' '.join(format_card(card) for card in game.player_cards)} (합: {game.player_total()})", inline=False)

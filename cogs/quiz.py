@@ -7,7 +7,8 @@ import re
 import logging
 from utils import (
     async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_booster_gain, level_reward_bonus,
+    apply_game_reward, format_booster_gain, format_chip_balance,
+    level_reward_bonus,
 )
 
 QUIZ_DB_PATH = "dictionary.db"
@@ -222,8 +223,10 @@ class QuizButton(discord.ui.Button):
             reward = calculate_quiz_reward(user_scores["quiz_streak"])
             reward += level_reward_bonus(user_scores.get("level"))
             bonus = apply_game_reward(user_scores, reward, exp_rate=0.5)
-            bonus_str = f" (부스터 +{bonus})" if bonus > 0 else ""
-            result_msg = f"{view.display_name} ⭕ '{view.definition}'의 뜻을 가진 단어는?\n(+{reward}{bonus_str}) (보유 칩: {user_scores['chips']})"
+            result_msg = (
+                f"{view.display_name} ⭕ '{view.definition}'의 뜻을 가진 단어는?\n"
+                f"{format_chip_balance(user_scores, reward, bonus)}"
+            )
         else:
             user_scores["quiz_streak"] = 0
             if self.index == view.no_answer_idx:
@@ -233,6 +236,7 @@ class QuizButton(discord.ui.Button):
                 wrong_def = view.choice_defs.get(wrong_word, "사전 뜻을 찾을 수 없습니다.")
                 result_msg = f"{view.display_name} ❌ '{view.definition}'의 뜻을 가진 단어는?\n💡 참고: **{wrong_word}**의 뜻은 '{wrong_def}'입니다."
             view.infinite = False
+            result_msg += f"\n{format_chip_balance(user_scores)}"
             
         await async_save_scores(view.user_id, user_scores)
         await view.disable_all(correct_idx=view.correct_idx, answer_word=view.word, user_idx=self.index)

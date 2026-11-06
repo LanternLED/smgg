@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple
 from collections import Counter
 from utils import (
     async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_booster_gain,
+    apply_game_reward, format_booster_gain, format_chip_balance,
 )
 
 TILE_EMOJI = {
@@ -886,10 +886,9 @@ def _dora_display(game: MahjongGame) -> str:
     ) if game.riichi else tile_emoji("back") * 5
     return f"도라{dora_str} 뒷도라{ura_str}"
  
-def mahjong_result_msg(game: MahjongGame, result: dict, reward: int, bonus: int = 0) -> str:
+def mahjong_result_msg(game: MahjongGame, result: dict) -> str:
     dora_line    = _dora_display(game)
     remaining    = remaining_draws(game.wall)
-    bonus_str    = f" (부스터 +{bonus:,})" if bonus > 0 else ""
 
     if result["result_type"] == "yakuman":
         yaku_str = " / ".join(
@@ -899,7 +898,7 @@ def mahjong_result_msg(game: MahjongGame, result: dict, reward: int, bonus: int 
         return (
             f"🀄 **역만 화료!** {yaku_str}\n"
             f"{dora_line}\n"
-            f"패산 {remaining}장 / {result['total_multiplier']}배 / **{reward:,}칩**{bonus_str}"
+            f"패산 {remaining}장 / {result['total_multiplier']}배"
         )
 
     if result["result_type"] == "kazoe":
@@ -908,7 +907,7 @@ def mahjong_result_msg(game: MahjongGame, result: dict, reward: int, bonus: int 
             f"🀄 **헤아림역만!** ({result['total_han']}판)\n"
             f"{yaku_str}\n"
             f"{dora_line}\n"
-            f"패산 {remaining}장 / **{reward:,}칩**{bonus_str}"
+            f"패산 {remaining}장"
         )
 
     if result["result_type"] == "normal":
@@ -1199,16 +1198,21 @@ async def _mahjong_end(interaction, game: MahjongGame, message: discord.Message)
 
     await async_save_scores(user_id, user_scores)
 
-    await message.edit(content=mahjong_result_msg(game, result, reward, bonus), view=None)
+    result_msg = mahjong_result_msg(game, result)
+    result_msg += f"\n{format_chip_balance(user_scores, reward, bonus)}"
+    await message.edit(content=result_msg, view=None)
  
 async def _mahjong_end_empty(interaction, game: MahjongGame, message: discord.Message):
     user_id = game.user_id
-    await async_check_level(user_id)
+    user_scores = await async_check_level(user_id)
     active_mahjong_games.pop(user_id, None)
 
     if game.hand_msg:
         await game.hand_msg.edit(content=_mahjong_hand_str(game))
-    await message.edit(content=mahjong_fail_msg(game), view=None)
+    await message.edit(
+        content=f"{mahjong_fail_msg(game)}\n{format_chip_balance(user_scores)}",
+        view=None,
+    )
 
 class MahjongCog(commands.Cog):
     def __init__(self, bot):

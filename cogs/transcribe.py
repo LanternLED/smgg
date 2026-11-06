@@ -29,6 +29,7 @@ from utils import (
     async_grant_daily_booster,
     async_save_scores,
     format_booster_gain,
+    format_chip_balance,
     get_db_connection,
     get_user_lock,
 )
@@ -780,10 +781,9 @@ class TranscribeCog(commands.Cog):
                 await async_save_scores(user_id, user_scores)
             await asyncio.to_thread(save_progress, user_id, work_id, pos, accuracy_sum, answered)
 
-            bonus_str = f" (부스터 +{booster_bonus})" if booster_bonus > 0 else ""
             last_result = (
                 f"{ctx.author.display_name} 이번 문장 정확도 **{accuracy:.1%}** · 작품 평균 정확도 **{average_accuracy:.1%}**\n"
-                f"(+{score}{bonus_str}) (보유 칩: {user_scores['chips']})"
+                f"{format_chip_balance(user_scores, score, booster_bonus)}"
             )
 
         # 끝까지 쳤다: 완료 보상 = 작품 글자수 × 평균 정확도 (재완료는 50%)
@@ -798,12 +798,11 @@ class TranscribeCog(commands.Cog):
             booster_bonus = apply_game_reward(user_scores, reward, exp_rate=0.5)
             await async_save_scores(user_id, user_scores)
 
-        bonus_str = f" (부스터 +{booster_bonus})" if booster_bonus > 0 else ""
         repeat_note = f" (재완료 {int(REPEAT_COMPLETION_RATE * 100)}%)" if previous_count > 0 else ""
         await stop_with(
             f"🎉 『{title}』 필사 완료! ({total}문장 · {total_chars}자)\n"
-            f"평균 정확도 **{average_accuracy:.1%}** · 완료 보상 +{reward}{repeat_note}{bonus_str} "
-            f"(보유 칩: {user_scores['chips']})"
+            f"평균 정확도 **{average_accuracy:.1%}** · 완료 보상{repeat_note} "
+            f"{format_chip_balance(user_scores, reward, booster_bonus)}"
         )
 
 

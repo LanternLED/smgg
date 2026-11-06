@@ -16,6 +16,7 @@ from utils import (
     async_grant_daily_booster,
     async_save_scores,
     format_booster_gain,
+    format_chip_balance,
     get_db_connection,
     get_user_lock,
     level_reward_bonus,
@@ -80,12 +81,33 @@ def get_example_id(user_id: str, progress: int, example_ids: tuple[int, ...]) ->
 
 def get_next_typing_milestone(completed_count: int, cycle_length: int) -> int:
     cycle_count = completed_count % cycle_length
-    next_cycle_milestone = (cycle_count // 100 + 1) * 100
+    next_cycle_milestone = (cycle_count // 20 + 1) * 20
     if next_cycle_milestone > cycle_length:
-        distance = cycle_length - cycle_count + 100
+        distance = cycle_length - cycle_count + 20
     else:
         distance = next_cycle_milestone - cycle_count
     return completed_count + distance
+
+
+def typing_edit_distance_with_period_tolerance(left: str, right: str) -> int:
+    """Allow one unmatched period without changing the cost of other typos."""
+    left_periods = left.count(".")
+    right_periods = right.count(".")
+    if left_periods > right_periods:
+        candidates = (
+            left[:index] + left[index + 1:]
+            for index, char in enumerate(left)
+            if char == "."
+        )
+        return min(typing_edit_distance(candidate, right) for candidate in candidates)
+    if right_periods > left_periods:
+        candidates = (
+            right[:index] + right[index + 1:]
+            for index, char in enumerate(right)
+            if char == "."
+        )
+        return min(typing_edit_distance(left, candidate) for candidate in candidates)
+    return typing_edit_distance(left, right)
 
 
 def load_example(example_id: int) -> str:
@@ -317,7 +339,7 @@ class TypingGameCog(commands.Cog):
 
                 answer = normalize_typing_text(answer_message.content)
                 distance = await asyncio.to_thread(
-                    typing_edit_distance,
+                    typing_edit_distance_with_period_tolerance,
                     target,
                     answer,
                 )
@@ -332,10 +354,10 @@ class TypingGameCog(commands.Cog):
                     # 레벨 보너스는 점수가 있는 입력에만 얹는다.
                     if score > 0:
                         score += level_reward_bonus(user_scores.get("level"))
-                    # 1회전 안에서 100개 완성마다 누적 개수의 제곱근만큼 칩을 지급한다.
+                    # 1회전 안에서 20개 완성마다 누적 개수의 제곱근만큼 칩을 지급한다.
                     cycle_count = completed_count % len(self.example_ids)
                     milestone_bonus = 0
-                    if score > 0 and cycle_count > 0 and cycle_count % 100 == 0:
+                    if score > 0 and cycle_count > 0 and cycle_count % 20 == 0:
                         milestone_bonus = math.isqrt(cycle_count)
                     cycle_length = len(self.example_ids)
                     completed_cycles = completed_count // cycle_length
@@ -367,26 +389,21 @@ class TypingGameCog(commands.Cog):
                         )
                     await async_save_scores(user_id, user_scores)
 
-                bonus_str = f" (부스터 +{booster_bonus})" if booster_bonus > 0 else ""
                 accuracy_result = f"이번 문장 정확도 **{accuracy:.1%}**"
                 if infinite:
                     accuracy_result += f" · 세션 평균 정확도 **{average_accuracy:.1%}**"
-                # 점수 문구는 퀴즈(cogs/quiz.py)와 동일한 형식
                 last_result = (
                     f"{ctx.author.display_name} {accuracy_result}\n"
-                    f"(+{score}{bonus_str}) (보유 칩: {user_scores['chips']})\n"
+                    f"{format_chip_balance(user_scores, score + goal_reward, booster_bonus + goal_booster_bonus)}\n"
                     f"완성한 문장: {completed_count:,}/"
                     f"{get_next_typing_milestone(completed_count, len(self.example_ids)):,}"
                 )
                 if milestone_bonus > 0:
-                    last_result += f"\n🏁 {cycle_count:,}문장 달성! 보너스 +{milestone_bonus:,} 칩"
+                    last_result += f"\n🏁 {cycle_count:,}문장 달성!"
                 if cycle_completion_bonus > 0:
                     last_result += (
-                        f"\n🏆 {completed_cycles:,}사이클 완주! "
-                        f"보너스 +{cycle_completion_bonus:,} 칩"
+                        f"\n🏆 {completed_cycles:,}사이클 완주!"
                     )
-                if goal_booster_bonus > 0:
-                    last_result += f"\n⚡ 목표 보상 부스터 +{goal_booster_bonus:,}"
                 if not infinite:
                     await session_message.edit(
                         content=last_result,

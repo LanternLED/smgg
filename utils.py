@@ -135,6 +135,31 @@ def apply_game_reward(
     return bonus
 
 
+def format_chip_balance(
+    user_scores: dict,
+    chip_gain: int = 0,
+    booster_gain: int = 0,
+) -> str:
+    chips = _coerce_int(user_scores.get("chips"), 0)
+    if chip_gain <= 0:
+        balance = f"[보유칩: {chips}]"
+    else:
+        reward = f"+{int(chip_gain)}"
+        if booster_gain > 0:
+            reward += f"|+{int(booster_gain)}"
+        balance = f"[보유칩: {chips} ({reward})]"
+
+    level = _coerce_int(user_scores.get("level"), 0)
+    exp = _coerce_int(user_scores.get("exp"), 0)
+    max_exp = int(pow(1.01, level) * 1000)
+    percent = (
+        round(exp / max_exp * 100, min(level // 232 + 1, 5))
+        if max_exp
+        else 0
+    )
+    return f"{balance} [Lv.{level}|{percent}%]"
+
+
 def _tune_connection(conn: sqlite3.Connection) -> sqlite3.Connection:
     # WAL: 쓰기 중에도 읽기가 막히지 않도록. busy_timeout: 락 경합 시
     # 곧바로 에러 내지 않고 잠깐 기다리도록(기본 5초보다 넉넉하게).
@@ -318,4 +343,4 @@ def format_booster_gain(result) -> str:
     if not result:
         return ""
     gained, user_scores = result
-    return f"⚡ 오늘의 부스터 **+{gained:,}** 획득! (보유: {user_scores['booster']:,})"
+    return f"출석 보상 부스터 **+{gained:,}** 획득! (보유: {user_scores['booster']:,})"
