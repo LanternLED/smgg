@@ -124,6 +124,7 @@ class MiniSlotSession(discord.ui.View):
         self.user_id = str(user_id)
         self.tickets_at_start = tickets
         self.message: discord.Message | None = None
+        self.result_message: discord.Message | None = None
         self.running = False
         self.manual_done = False
         self.auto_started = False
@@ -142,10 +143,9 @@ class MiniSlotSession(discord.ui.View):
     def _touch(self) -> None:
         self._last_active = time.monotonic()
 
-    async def start(self, channel, mention: str) -> None:
+    async def start(self, channel) -> None:
         self.message = await channel.send(
-            f"{mention} 오늘의 미니슬롯 — 티켓 {self.tickets_at_start:,}장\n"
-            f"{SLOT_IDLE * 3}",
+            SLOT_IDLE * 3,
             view=self,
         )
         self._idle_task = asyncio.create_task(self._watch_idle())
@@ -173,6 +173,13 @@ class MiniSlotSession(discord.ui.View):
             pass
         except discord.HTTPException:
             logger.exception("미니슬롯 세션 삭제 실패 (user_id=%s)", self.user_id)
+        if self.result_message is not None:
+            try:
+                await self.result_message.delete()
+            except discord.NotFound:
+                pass
+            except discord.HTTPException:
+                logger.exception("미니슬롯 결과 삭제 실패 (user_id=%s)", self.user_id)
 
     async def _is_owner(self, interaction: discord.Interaction) -> bool:
         if str(interaction.user.id) == self.user_id:
@@ -190,7 +197,7 @@ class MiniSlotSession(discord.ui.View):
         assert self.message is not None
         fast = not manual
 
-        await self.message.edit(content=f"<@{self.user_id}>\n{SLOT_ROLLING * 3}", view=self)
+        await self.message.edit(content=SLOT_ROLLING * 3, view=self)
         await asyncio.sleep(1.0 if fast else 1.9)
 
         symbols = list(SYMBOL_WEIGHTS.keys())
@@ -198,7 +205,7 @@ class MiniSlotSession(discord.ui.View):
         slot_values = random.choices(symbols, weights=weights, k=3)
 
         rolled = [ROLL_ICONS[s][i] for i, s in enumerate(slot_values)]
-        await self.message.edit(content=f"<@{self.user_id}>\n{''.join(rolled)}", view=self)
+        await self.message.edit(content="".join(rolled), view=self)
         await asyncio.sleep(1.0 if fast else 2.0)
 
         prize = calculate_prize(slot_values)
@@ -218,7 +225,7 @@ class MiniSlotSession(discord.ui.View):
                     prize += GOLDEN_FRUIT_PRIZE
                     golden_hit = True
 
-        await self.message.edit(content=f"<@{self.user_id}>\n{''.join(icons)}", view=self)
+        await self.message.edit(content="".join(icons), view=self)
         if golden_hit:
             await asyncio.sleep(1.4)
             for i in range(3):
@@ -226,7 +233,7 @@ class MiniSlotSession(discord.ui.View):
                     if slot_values[i] == kind[0]:
                         icons[i] = kind[2]
             note += "**황금 과일!** "
-            await self.message.edit(content=f"<@{self.user_id}>\n{''.join(icons)}", view=self)
+            await self.message.edit(content="".join(icons), view=self)
 
         reward = ticket_reward(prize)
 
@@ -241,14 +248,14 @@ class MiniSlotSession(discord.ui.View):
         user_scores, left = await update_user(self.user_id, settle)
         if left is None:
             return None
-        board = "".join(icons)
-        await self.message.edit(
-            content=(
-                f"<@{self.user_id}>\n{board}\n"
-                f"{note}부스터 **+{reward:,}** (보유: {user_scores['booster']:,}) · 남은 티켓 {left:,}장"
-            ),
-            view=self,
+        result_content = (
+            f"{note}부스터 **+{reward:,}** (보유: {user_scores['booster']:,})"
+            f" · 남은 티켓 {left:,}장"
         )
+        if self.result_message is None:
+            self.result_message = await self.message.channel.send(result_content)
+        else:
+            await self.result_message.edit(content=result_content)
         return reward, left
 
     # ── 버튼 ────────────────────────────────────────────────────
@@ -338,7 +345,7 @@ class DailyClaimView(discord.ui.View):
         self.user_id = str(user_id)
         self.claimed = False
 
-    @discord.ui.button(label="추가 부스터? [얻기]", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="얻기", style=discord.ButtonStyle.success)
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
         if str(interaction.user.id) != self.user_id:
             await interaction.response.send_message("본인만 조작할 수 있습니다.", ephemeral=True)
@@ -356,7 +363,7 @@ class DailyClaimView(discord.ui.View):
             await interaction.followup.send("사용할 미니슬롯 티켓이 없습니다.", ephemeral=True)
             return
         session = MiniSlotSession(self.user_id, tickets)
-        await session.start(interaction.channel, interaction.user.mention)
+        await session.start(interaction.channel)
         self.stop()
 
 
@@ -367,7 +374,7 @@ async def send_daily_notice(ctx, result) -> None:
         return
     try:
         await ctx.send(
-            f"{ctx.author.mention} {notice}",
+            f"{ctx.author.mention} 추가 부스터? {notice}",
             view=DailyClaimView(str(ctx.author.id)),
             delete_after=NOTICE_SECONDS,
         )
