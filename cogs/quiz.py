@@ -7,9 +7,8 @@ import re
 import logging
 from daily_claim import send_daily_notice
 from utils import (
-    async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_chip_balance,
-    level_reward_bonus,
+    async_check_level, async_grant_daily_booster, apply_game_reward,
+    format_chip_balance, level_reward_bonus, update_user, refresh_scores,
 )
 
 QUIZ_DB_PATH = "dictionary.db"
@@ -184,9 +183,10 @@ class QuizView(discord.ui.View):
             if user_quiz_sessions.get(self.user_id) is self:
                 del user_quiz_sessions[self.user_id]
             infinite_quiz_escape_events.pop(self.user_id, None)
-            user_scores = await async_check_level(self.user_id)
-            user_scores["quiz_streak"] = 0
-            await async_save_scores(self.user_id, user_scores)
+            await update_user(
+                self.user_id,
+                lambda s: (refresh_scores(s), s.__setitem__("quiz_streak", 0)),
+            )
             await self.disable_all(correct_idx=self.correct_idx, answer_word=self.word)
             await self.message.edit(
                 content=f"{self.display_name} '{self.definition}'의 뜻을 가진 단어는?\n"
@@ -217,19 +217,26 @@ class QuizButton(discord.ui.Button):
         view.answered = True
         view.stop()
         await async_grant_daily_booster(view.user_id)
-        user_scores = await async_check_level(view.user_id)
-        
-        if self.index == view.correct_idx:
+        is_correct = self.index == view.correct_idx
+
+        def settle_quiz(user_scores):
+            refresh_scores(user_scores)
+            if not is_correct:
+                user_scores["quiz_streak"] = 0
+                return 0, 0
             user_scores["quiz_streak"] += 1
             reward = calculate_quiz_reward(user_scores["quiz_streak"])
             reward += level_reward_bonus(user_scores.get("level"))
-            bonus = apply_game_reward(user_scores, reward, exp_rate=0.5)
+            return reward, apply_game_reward(user_scores, reward, exp_rate=0.5)
+
+        user_scores, (reward, bonus) = await update_user(view.user_id, settle_quiz)
+
+        if is_correct:
             result_msg = (
                 f"{view.display_name} ⭕ '{view.definition}'의 뜻을 가진 단어는?\n"
                 f"{format_chip_balance(user_scores, reward, bonus)}"
             )
         else:
-            user_scores["quiz_streak"] = 0
             if self.index == view.no_answer_idx:
                 result_msg = f"{view.display_name} ❌ '{view.definition}'의 뜻을 가진 단어는?\n💡 **정답이 있는 문제였습니다!**"
             else:
@@ -238,8 +245,7 @@ class QuizButton(discord.ui.Button):
                 result_msg = f"{view.display_name} ❌ '{view.definition}'의 뜻을 가진 단어는?\n💡 참고: **{wrong_word}**의 뜻은 '{wrong_def}'입니다."
             view.infinite = False
             result_msg += f"\n{format_chip_balance(user_scores)}"
-            
-        await async_save_scores(view.user_id, user_scores)
+
         await view.disable_all(correct_idx=view.correct_idx, answer_word=view.word, user_idx=self.index)
         await interaction.response.edit_message(content=result_msg, view=view)
         

@@ -12,14 +12,9 @@ from discord.ext import commands
 
 from daily_claim import send_daily_notice
 from utils import (
-    apply_game_reward,
-    async_check_level,
-    async_grant_daily_booster,
-    async_save_scores,
-    format_chip_balance,
-    get_db_connection,
-    get_user_lock,
-    level_reward_bonus,
+    apply_game_reward, async_check_level, async_grant_daily_booster,
+    format_chip_balance, get_db_connection, level_reward_bonus,
+    refresh_scores, update_user,
 )
 
 DICTIONARY_DB_PATH = "dictionary.db"
@@ -345,33 +340,35 @@ class TypingGameCog(commands.Cog):
                 score = max(0, phoneme_count - distance) // 2
                 accuracy = max(0.0, 1.0 - distance / phoneme_count)
 
-                async with get_user_lock(user_id):
-                    user_scores = await async_check_level(user_id)
+                if infinite:
+                    accuracy_sum += accuracy
+                    accuracy_count += 1
+                    average_accuracy = accuracy_sum / accuracy_count
+
+                def settle_typing(user_scores):
+                    refresh_scores(user_scores)
                     user_scores["typing"] = int(user_scores.get("typing", 0) or 0) + 1
                     completed_count = user_scores["typing"]
+                    gain = score
                     # 레벨 보너스는 점수가 있는 입력에만 얹는다.
-                    if score > 0:
-                        score += level_reward_bonus(user_scores.get("level"))
+                    if gain > 0:
+                        gain += level_reward_bonus(user_scores.get("level"))
                     # 1회전 안에서 20개 완성마다 누적 개수의 제곱근만큼 칩을 지급한다.
                     cycle_count = completed_count % len(self.example_ids)
                     milestone_bonus = 0
-                    if score > 0 and cycle_count > 0 and cycle_count % 20 == 0:
+                    if gain > 0 and cycle_count > 0 and cycle_count % 20 == 0:
                         milestone_bonus = math.isqrt(cycle_count)
                     cycle_length = len(self.example_ids)
                     completed_cycles = completed_count // cycle_length
                     previous_completed_cycles = (completed_count - 1) // cycle_length
                     cycle_completion_bonus = 0
-                    if score > 0 and completed_cycles > previous_completed_cycles:
+                    if gain > 0 and completed_cycles > previous_completed_cycles:
                         cycle_completion_bonus = (
                             completed_cycles - previous_completed_cycles
                         ) * 10_000
-                    if infinite:
-                        accuracy_sum += accuracy
-                        accuracy_count += 1
-                        average_accuracy = accuracy_sum / accuracy_count
                     booster_bonus = apply_game_reward(
                         user_scores,
-                        score,
+                        gain,
                         exp_rate=0.5,
                     )
                     goal_reward = milestone_bonus + cycle_completion_bonus
@@ -385,7 +382,17 @@ class TypingGameCog(commands.Cog):
                             booster_gain=goal_reward,
                             booster_exp_rate=0,
                         )
-                    await async_save_scores(user_id, user_scores)
+                    return (
+                        gain, completed_count, cycle_count, milestone_bonus,
+                        completed_cycles, cycle_completion_bonus,
+                        booster_bonus, goal_booster_bonus,
+                    )
+
+                user_scores, (
+                    score, completed_count, cycle_count, milestone_bonus,
+                    completed_cycles, cycle_completion_bonus,
+                    booster_bonus, goal_booster_bonus,
+                ) = await update_user(user_id, settle_typing)
 
                 accuracy_result = f"이번 문장 정확도 **{accuracy:.1%}**"
                 if infinite:

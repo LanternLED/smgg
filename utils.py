@@ -1,7 +1,7 @@
+import inspect
 import sqlite3
 import asyncio
 import math
-from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 DB_PATH = "scores.db"
@@ -16,27 +16,11 @@ BOOSTER_DECAY = 0.95         # 밀린 날짜의 감쇠율
 BOOSTER_BASE_BONUS_PERCENT = 20
 BOOSTER_BONUS_PER_MAGNITUDE_PERCENT = 10
 
-# ── 유저 단위 락 ────────────────────────────────────────────────
-# load_scores → (메모리 상에서 수정) → save_scores 사이 구간은 DB
-# 트랜잭션으로 보호되지 않으므로, 같은 유저에 대해 이 구간을 동시에
-# 여러 커맨드가 실행하면 lost update가 발생할 수 있다.
-# "점수 읽기 → 수정 → 저장"을 한 덩어리로 묶어야 하는 모든 커맨드는
-# 아래 get_user_lock(user_id)로 감싸서 사용할 것.
-_user_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-
-
-def get_user_lock(user_id: str) -> asyncio.Lock:
-    """유저별 asyncio.Lock을 반환한다. read-modify-write 구간 전체를
-    이 락으로 감싸면 동시 실행으로 인한 점수 덮어쓰기를 막을 수 있다.
-
-    사용 예:
-        async with get_user_lock(user_id):
-            user_scores = await async_load_scores(user_id)
-            ... # user_scores 수정
-            await async_save_scores(user_id, user_scores)
-    """
-    return _user_locks[str(user_id)]
-
+# ── 유저 데이터 갱신 ─────────────────────────────────────────────
+# "읽기 → 수정 → 저장"은 반드시 update_user() / update_users()로 한 번에 처리한다.
+# 함수(fn) 하나를 DB 트랜잭션(BEGIN IMMEDIATE) 안에서 실행하고, 바뀐 컬럼만 저장하므로
+# 같은 유저에 대한 동시 실행이 서로의 변경을 덮어쓰지 않는다. (asyncio.Lock 불필요)
+# fn은 await가 없는 동기 함수여야 한다.
 
 def _coerce_int(value, default=0) -> int:
     if value is None or value == "":
@@ -135,6 +119,19 @@ def apply_game_reward(
     return bonus
 
 
+def level_progress(user_scores: dict):
+    """(레벨, 다음 레벨까지의 진행률 %)."""
+    level = _coerce_int(user_scores.get("level"), 0)
+    exp = _coerce_int(user_scores.get("exp"), 0)
+    max_exp = int(pow(1.01, level) * 1000)
+    percent = (
+        round(exp / max_exp * 100, min(level // 232 + 1, 5))
+        if max_exp
+        else 0
+    )
+    return level, percent
+
+
 def format_chip_balance(
     user_scores: dict,
     chip_gain: int = 0,
@@ -149,14 +146,7 @@ def format_chip_balance(
             reward += f"|+{int(booster_gain)}"
         balance = f"[보유칩: {chips} ({reward})]"
 
-    level = _coerce_int(user_scores.get("level"), 0)
-    exp = _coerce_int(user_scores.get("exp"), 0)
-    max_exp = int(pow(1.01, level) * 1000)
-    percent = (
-        round(exp / max_exp * 100, min(level // 232 + 1, 5))
-        if max_exp
-        else 0
-    )
+    level, percent = level_progress(user_scores)
     return f"{balance} [Lv.{level}|{percent}%]"
 
 
@@ -195,9 +185,8 @@ def _ensure_slot_ticket_column(conn: sqlite3.Connection) -> None:
     _slot_ticket_column_ready = True
 
 
-def load_scores(user_id: str):
-    conn = get_db_connection()
-    _ensure_slot_ticket_column(conn)
+def _read_user(conn: sqlite3.Connection, user_id: str) -> dict:
+    """유저 행을 읽어 정수 컬럼을 정규화해 돌려준다. 행이 없으면 새로 만든다(커밋은 호출자 몫)."""
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM user WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
@@ -209,10 +198,8 @@ def load_scores(user_id: str):
             'INSERT INTO user (user_id, last_update, daily_update, booster) VALUES (?, ?, ?, 0)',
             (user_id, now_str, yesterday_str)
         )
-        conn.commit()
         cursor.execute("SELECT * FROM user WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
-    conn.close()
     res = dict(row) if row is not None else {}
     res["booster"] = _coerce_int(res.get("booster"), 0)
     res["chips"] = _coerce_int(res.get("chips"), 0)
@@ -224,6 +211,17 @@ def load_scores(user_id: str):
     res["typing"] = _coerce_int(res.get("typing"), 0)
     res["slot_ticket"] = _coerce_int(res.get("slot_ticket"), 0)
     # mahjong_played는 TEXT(DEFAULT NULL)라 정수 변환하지 않고 그대로 둔다
+    return res
+
+
+def load_scores(user_id: str):
+    conn = get_db_connection()
+    try:
+        _ensure_slot_ticket_column(conn)
+        res = _read_user(conn, user_id)
+        conn.commit()
+    finally:
+        conn.close()
     return res
 
 
@@ -264,6 +262,71 @@ def save_scores(user_id: str, user_scores: dict):
         conn.commit()
 
 
+def _write_changes(conn: sqlite3.Connection, user_id: str, before: dict, after: dict) -> None:
+    """읽을 때와 달라진 컬럼만 UPDATE한다."""
+    old = _filter_score_updates(before)
+    new = _filter_score_updates(after)
+    changed = {col: val for col, val in new.items() if old.get(col) != val}
+    if not changed:
+        return
+    set_clause = ", ".join(f"{col} = ?" for col in changed)
+    conn.execute(
+        f"UPDATE user SET {set_clause} WHERE user_id = ?",
+        [*changed.values(), user_id],
+    )
+
+
+def _update_users_sync(user_ids, fn):
+    ids = sorted({str(user_id) for user_id in user_ids})
+    conn = get_db_connection()
+    try:
+        _ensure_slot_ticket_column(conn)
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            states = {user_id: _read_user(conn, user_id) for user_id in ids}
+            before = {user_id: dict(state) for user_id, state in states.items()}
+            result = fn(states)
+            if inspect.isawaitable(result):
+                raise TypeError("update_user의 fn은 await 없는 동기 함수여야 합니다.")
+            for user_id in ids:
+                _write_changes(conn, user_id, before[user_id], states[user_id])
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        return states, result
+    finally:
+        conn.close()
+
+
+async def update_user(user_id, fn):
+    """fn(user_scores)를 한 DB 트랜잭션 안에서 실행하고 바뀐 컬럼만 저장한다.
+
+    fn은 user_scores(dict)를 직접 수정하는 동기 함수이며 반환값은 그대로 전달된다.
+    반환: (갱신된 user_scores, fn의 반환값). fn이 예외를 던지면 아무것도 저장되지 않는다.
+    """
+    uid = str(user_id)
+    states, result = await asyncio.to_thread(
+        _update_users_sync, [uid], lambda st: fn(st[uid])
+    )
+    return states[uid], result
+
+
+async def update_users(user_ids, fn):
+    """여러 유저를 한 트랜잭션으로 갱신한다. fn({user_id: user_scores})."""
+    states, result = await asyncio.to_thread(_update_users_sync, user_ids, fn)
+    return states, result
+
+
+def refresh_scores(user_scores: dict) -> dict:
+    """점수 감쇠 + 레벨업 + 정수 보정. (async_check_level의 순수 함수 버전)"""
+    calculate_score(user_scores)
+    apply_level_ups(user_scores)
+    user_scores["chips"] = _coerce_int(user_scores.get("chips"), 0)
+    user_scores["booster"] = _coerce_int(user_scores.get("booster"), 0)
+    return user_scores
+
+
 def calculate_score(user_scores):
     if _coerce_int(user_scores.get("active", 0), 0) == 0:
         return user_scores
@@ -291,11 +354,7 @@ async def async_save_scores(user_id: str, user_scores: dict):
 
 
 async def async_check_level(user_id: str):
-    user_scores = calculate_score(await async_load_scores(user_id))
-    apply_level_ups(user_scores)
-    user_scores['chips'] = _coerce_int(user_scores.get('chips'), 0)
-    user_scores['booster'] = _coerce_int(user_scores.get('booster'), 0)
-    await async_save_scores(user_id, user_scores)
+    user_scores, _ = await update_user(user_id, refresh_scores)
     return user_scores
 
 
@@ -355,14 +414,16 @@ def grant_daily_booster(user_scores: dict):
     return gained
 
 
+def _daily_grant(user_scores: dict) -> int:
+    calculate_score(user_scores)
+    return grant_daily_booster(user_scores)
+
+
 async def async_grant_daily_booster(user_id: str):
-    async with get_user_lock(user_id):
-        user_scores = calculate_score(await async_load_scores(user_id))
-        gained = grant_daily_booster(user_scores)
-        if gained <= 0:
-            return None
-        await async_save_scores(user_id, user_scores)
-        return gained, user_scores
+    user_scores, gained = await update_user(user_id, _daily_grant)
+    if gained <= 0:
+        return None
+    return gained, user_scores
 
 
 def format_booster_gain(result) -> str:

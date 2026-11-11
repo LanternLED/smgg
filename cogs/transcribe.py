@@ -25,13 +25,8 @@ from cogs.typing_game import (
 )
 from daily_claim import send_daily_notice
 from utils import (
-    apply_game_reward,
-    async_check_level,
-    async_grant_daily_booster,
-    async_save_scores,
-    format_chip_balance,
-    get_db_connection,
-    get_user_lock,
+    apply_game_reward, async_grant_daily_booster, format_chip_balance,
+    get_db_connection, update_user, refresh_scores,
 )
 
 ADMIN_USER_ID = 440536830404722698
@@ -773,10 +768,10 @@ class TranscribeCog(commands.Cog):
             accuracy_sum += accuracy
             average_accuracy = accuracy_sum / answered
 
-            async with get_user_lock(user_id):
-                user_scores = await async_check_level(user_id)
-                booster_bonus = apply_game_reward(user_scores, score, exp_rate=0.5)
-                await async_save_scores(user_id, user_scores)
+            user_scores, booster_bonus = await update_user(
+                user_id,
+                lambda s: apply_game_reward(refresh_scores(s), score, exp_rate=0.5),
+            )
             await asyncio.to_thread(save_progress, user_id, work_id, pos, accuracy_sum, answered)
 
             last_result = (
@@ -791,10 +786,10 @@ class TranscribeCog(commands.Cog):
         reward = int(total_chars * average_accuracy)
         if previous_count > 0:
             reward = int(reward * REPEAT_COMPLETION_RATE)
-        async with get_user_lock(user_id):
-            user_scores = await async_check_level(user_id)
-            booster_bonus = apply_game_reward(user_scores, reward, exp_rate=0.5)
-            await async_save_scores(user_id, user_scores)
+        user_scores, booster_bonus = await update_user(
+            user_id,
+            lambda s: apply_game_reward(refresh_scores(s), reward, exp_rate=0.5),
+        )
 
         repeat_note = f" (재완료 {int(REPEAT_COMPLETION_RATE * 100)}%)" if previous_count > 0 else ""
         await stop_with(

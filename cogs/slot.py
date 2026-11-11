@@ -7,9 +7,8 @@ import time
 from slot_engine import SlotEngine
 from daily_claim import send_daily_notice
 from utils import (
-    async_load_scores, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_chip_balance,
-    get_user_lock,
+    async_grant_daily_booster, apply_game_reward, format_chip_balance,
+    update_user,
 )
 
 logger = logging.getLogger(__name__)
@@ -250,12 +249,12 @@ class SlotView(discord.ui.View):
             final_board_text = render_board_static(engine.board, winning_positions=engine.winning_positions)
             await self._edit_board(final_board_text)
 
-            # load → 수정 → save 구간은 다른 커맨드(예: 칩판매)와
-            # 동시에 실행되면 서로의 변경을 덮어쓸 수 있으므로 락으로 보호한다.
-            async with get_user_lock(self.user_id):
-                user_scores = await async_load_scores(self.user_id)
+            # 비용 차감과 보상 지급은 결과가 확정된 시점에 한 트랜잭션으로 처리한다.
+            # (연출 도중 봇이 꺼져도 칩이 빠져나가지 않고, 다른 커맨드와 동시에 실행돼도
+            # 서로의 변경을 덮어쓰지 않는다.)
+            def settle(user_scores):
                 user_scores["chips"] = int(user_scores.get("chips", 0) or 0) - self.bet
-
+                chip_reward = 0
                 if reward > 0:
                     booster_conversion = reward * 5 // 100
                     chip_reward = reward - booster_conversion
@@ -272,7 +271,9 @@ class SlotView(discord.ui.View):
                         booster_gain=0,
                         booster_exp_rate=0,
                     )
-                await async_save_scores(self.user_id, user_scores)
+                return chip_reward
+
+            user_scores, chip_reward = await update_user(self.user_id, settle)
 
             if reward > 0:
                 if details:

@@ -6,8 +6,8 @@ from typing import List, Optional, Tuple
 from collections import Counter
 from daily_claim import send_daily_notice
 from utils import (
-    async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_chip_balance,
+    async_check_level, async_grant_daily_booster, apply_game_reward,
+    format_chip_balance, update_user, refresh_scores,
 )
 
 TILE_EMOJI = {
@@ -1192,12 +1192,13 @@ async def _mahjong_end(interaction, game: MahjongGame, message: discord.Message)
     if result["reward_eligible"]:
         reward = mahjong_calc_reward(result["total_multiplier"], remaining_draws(game.wall))
 
-    user_scores = await async_check_level(user_id)
-    bonus = 0
-    if result["reward_eligible"]:
-        bonus = apply_game_reward(user_scores, reward, exp_rate=0.25)
+    def settle_mahjong(user_scores):
+        refresh_scores(user_scores)
+        if result["reward_eligible"]:
+            return apply_game_reward(user_scores, reward, exp_rate=0.25)
+        return 0
 
-    await async_save_scores(user_id, user_scores)
+    user_scores, bonus = await update_user(user_id, settle_mahjong)
 
     result_msg = mahjong_result_msg(game, result)
     result_msg += f"\n{format_chip_balance(user_scores, reward, bonus)}"

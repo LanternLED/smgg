@@ -6,8 +6,8 @@ import os
 import json
 from daily_claim import send_daily_notice
 from utils import (
-    async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_chip_balance,
+    async_check_level, async_grant_daily_booster, apply_game_reward,
+    format_chip_balance, update_user, refresh_scores,
 )
 
 active_blackjack_games = {}
@@ -220,7 +220,9 @@ class BlackjackCog(commands.Cog):
             is_player_natural = (game.player_total() == 21 and len(game.player_cards) == 2)
             is_dealer_natural = (game.dealer_total() == 21 and len(game.dealer_cards) == 2)
 
-            if is_player_natural and not is_dealer_natural:
+            if game.player_total() > 21:
+                msg2_value = "버스트했습니다. 패배하셨습니다."
+            elif is_player_natural and not is_dealer_natural:
                 msg2_value = "블랙잭! 1.5배의 배당금을 받습니다."
                 game.bet = int(game.bet * 1.5)
             elif game.dealer_total() > 21:
@@ -238,18 +240,27 @@ class BlackjackCog(commands.Cog):
             else:
                 msg2_value = "손님의 합이 더 크므로, 승리하셨습니다."
 
-            if game.bet >= 0:
-                bonus = apply_game_reward(user_scores, int(abs(game.bet)), exp_rate=0.05)
-                msg2_value += f"\n{format_chip_balance(user_scores, game.bet, bonus)}"
+            final_bet = game.bet
+
+            def settle_blackjack(user_scores):
+                refresh_scores(user_scores)
+                if final_bet >= 0:
+                    return apply_game_reward(user_scores, int(abs(final_bet)), exp_rate=0.05)
+                # 패배: 건 칩만큼 차감한다. (더블 다운이면 두 배)
+                user_scores["chips"] -= abs(final_bet)
+                return 0
+
+            user_scores, bonus = await update_user(user_id, settle_blackjack)
+            if final_bet >= 0:
+                msg2_value += f"\n{format_chip_balance(user_scores, final_bet, bonus)}"
             else:
-                msg2_value += f"\n{format_chip_balance(user_scores)}"
+                msg2_value += f"\n칩 {final_bet} {format_chip_balance(user_scores)}"
 
             final_embed = discord.Embed(title="블랙잭 결과", description=msg2_value)
             final_embed.add_field(name="플레이어 최종", value=f"{' '.join(format_card(card) for card in game.player_cards)} (합: {game.player_total()})", inline=False)
             final_embed.add_field(name="딜러 최종", value=f"{' '.join(format_card(card) for card in game.dealer_cards)} (합: {game.dealer_total()})", inline=False)
             await msg.edit(embed=final_embed, view=None)
-            
-            await async_save_scores(user_id, user_scores)
+
             await async_save_deck()
             
         finally:

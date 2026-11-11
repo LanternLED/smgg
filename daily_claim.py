@@ -20,8 +20,7 @@ import time
 import discord
 
 from utils import (
-    async_load_scores, async_save_scores, format_booster_gain,
-    get_user_lock, _coerce_int,
+    async_load_scores, format_booster_gain, update_user, _coerce_int,
 )
 
 logger = logging.getLogger(__name__)
@@ -185,7 +184,7 @@ class MiniSlotSession(discord.ui.View):
     async def _spin(self, *, manual: bool):
         """한 판을 굴리고 정산한다. 티켓이 없으면 None.
 
-        결과를 먼저 뽑고 연출한 뒤, 연출이 끝나면 락 안에서 티켓 차감과 지급을
+        결과를 먼저 뽑고 연출한 뒤, 연출이 끝나면 한 트랜잭션으로 티켓 차감과 지급을
         한 번에 처리한다. (연출 도중 오류가 나도 티켓은 사라지지 않는다.)
         """
         assert self.message is not None
@@ -230,16 +229,18 @@ class MiniSlotSession(discord.ui.View):
             await self.message.edit(content=f"<@{self.user_id}>\n{''.join(icons)}", view=self)
 
         reward = ticket_reward(prize)
-        async with get_user_lock(self.user_id):
-            user_scores = await async_load_scores(self.user_id)
+
+        def settle(user_scores):
             tickets = _coerce_int(user_scores.get("slot_ticket"), 0)
             if tickets <= 0:
                 return None
             user_scores["slot_ticket"] = tickets - 1
             user_scores["booster"] = _coerce_int(user_scores.get("booster"), 0) + reward
-            await async_save_scores(self.user_id, user_scores)
+            return tickets - 1
 
-        left = tickets - 1
+        user_scores, left = await update_user(self.user_id, settle)
+        if left is None:
+            return None
         board = "".join(icons)
         await self.message.edit(
             content=(
