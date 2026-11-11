@@ -26,10 +26,9 @@ from cogs.typing_game import (
 from daily_claim import send_daily_notice
 from utils import (
     apply_game_reward, async_grant_daily_booster, format_chip_balance,
-    get_db_connection, update_user, refresh_scores,
+    get_db_connection, update_user, refresh_scores, ADMIN_USER_ID,
 )
 
-ADMIN_USER_ID = 440536830404722698
 MAX_SENTENCE_LENGTH = 400
 ADD_TIMEOUT_SECONDS = 600  # 내용추가: 입력이 이만큼 없으면 탈출과 같게 종료
 TRANSCRIBE_BASE_TIMEOUT_SECONDS = 300  # 필사: 문장당 기본 제한시간 (+ 문장 글자수만큼 가산)

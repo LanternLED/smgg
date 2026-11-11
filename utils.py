@@ -5,6 +5,7 @@ import math
 from datetime import date, datetime, timedelta
 
 DB_PATH = "scores.db"
+ADMIN_USER_ID = 440536830404722698
 
 # ── 칩 경제 개편: 고정 교환비 (레벨 무관) ──────────────────────────
 CHIP_BUY_RATE = 100        # 1시간(score) → 100칩

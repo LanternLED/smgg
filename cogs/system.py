@@ -7,7 +7,7 @@ from daily_claim import send_daily_notice
 from utils import (
     async_load_scores, calculate_score, async_load_scores_all, CHIP_BUY_RATE,
     CHIP_SELL_COST, async_grant_daily_booster, update_user, update_users,
-    refresh_scores, level_progress,
+    refresh_scores, level_progress, ADMIN_USER_ID,
 )
 
 class SystemCog(commands.Cog):
@@ -201,6 +201,39 @@ class SystemCog(commands.Cog):
         chips = int(user_scores.get('chips', 0))
         msg = f"{member.display_name} Lv.{lv} ({percent}%) / 칩 보유: {chips} / 부스터: {booster}"
         await ctx.send(msg)
+
+    @commands.command(name="시간여행")
+    async def time_travel(self, ctx):
+        if ctx.author.id != ADMIN_USER_ID:
+            await ctx.send("관리자 전용 명령어입니다.")
+            return
+
+        def travel(user_scores):
+            last_attendance = user_scores.get("daily_update")
+            if not isinstance(last_attendance, str):
+                return None
+            try:
+                last_date = datetime.fromisoformat(last_attendance).date()
+            except ValueError:
+                return None
+
+            shifted_date = last_date - timedelta(days=1)
+            deduction = 2000 + user_scores["level"]
+            user_scores["daily_update"] = shifted_date.isoformat()
+            user_scores["chips"] -= deduction
+            return last_date, shifted_date, deduction
+
+        user_scores, result = await update_user(str(ctx.author.id), travel)
+        if result is None:
+            await ctx.send("저장된 출석 날짜를 확인할 수 없어 시간여행을 실행하지 못했습니다.")
+            return
+
+        last_date, shifted_date, deduction = result
+        await ctx.send(
+            f"{ctx.author.mention} 출석일을 {last_date.isoformat()}에서 "
+            f"{shifted_date.isoformat()}으로 변경하고 칩 {deduction:,}개를 차감했습니다. "
+            f"(보유: {user_scores['chips']:,})"
+        )
 
     @commands.command(name='칩구매')
     async def buy_chips(self, ctx, score: int = 0):
