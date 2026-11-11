@@ -16,12 +16,7 @@ class SystemCog(commands.Cog):
 
     async def _grant_daily_booster_if_needed(self, ctx):
         user_id = str(ctx.author.id)
-        result = await async_grant_daily_booster(user_id)
-        if result is None:
-            return None
-        _, user_scores = result
-        await send_daily_notice(ctx, result)
-        return user_scores
+        return await async_grant_daily_booster(user_id)
 
     @commands.command(name='탈퇴')
     async def unregister(self, ctx):
@@ -36,7 +31,8 @@ class SystemCog(commands.Cog):
         user_id = str(ctx.author.id)
         await update_user(user_id, lambda s: s.__setitem__('active', 1))
         await ctx.send(f"{ctx.author.mention}님, 닉넴빵에 합류하신 것을 환영합니다.")
-        await self._grant_daily_booster_if_needed(ctx)
+        booster_result = await self._grant_daily_booster_if_needed(ctx)
+        await send_daily_notice(ctx, booster_result)
 
     @commands.command(name="점수확인")
     async def check_scores_all(self, ctx):
@@ -161,11 +157,13 @@ class SystemCog(commands.Cog):
     @commands.command(name="내정보", aliases=["출석"])
     async def info_self(self, ctx):
         user_id = str(ctx.author.id)
+        booster_result = None
         try:
-            await self._grant_daily_booster_if_needed(ctx)
+            booster_result = await self._grant_daily_booster_if_needed(ctx)
             user_scores = await async_load_scores(user_id)
         except Exception as exc:
             await ctx.send(f"정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요. (오류: {type(exc).__name__})")
+            await send_daily_notice(ctx, booster_result)
             return
 
         user_scores.setdefault('level', 0)
@@ -179,15 +177,18 @@ class SystemCog(commands.Cog):
         chips = int(user_scores.get('chips', 0))
         msg = f"{ctx.author.mention} Lv.{lv} ({percent}%) / 칩 보유: {chips} / 부스터: {booster}"
         await ctx.send(msg)
+        await send_daily_notice(ctx, booster_result)
 
     @commands.command(name="남의정보")
     async def info_other(self, ctx, member: discord.Member):
         user_id = str(member.id)
+        booster_result = None
         try:
-            await self._grant_daily_booster_if_needed(ctx)
+            booster_result = await self._grant_daily_booster_if_needed(ctx)
             user_scores = await async_load_scores(user_id)
         except Exception as exc:
             await ctx.send(f"정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요. (오류: {type(exc).__name__})")
+            await send_daily_notice(ctx, booster_result)
             return
 
         user_scores.setdefault('level', 0)
@@ -201,6 +202,7 @@ class SystemCog(commands.Cog):
         chips = int(user_scores.get('chips', 0))
         msg = f"{member.display_name} Lv.{lv} ({percent}%) / 칩 보유: {chips} / 부스터: {booster}"
         await ctx.send(msg)
+        await send_daily_notice(ctx, booster_result)
 
     @commands.command(name="시간여행")
     async def time_travel(self, ctx):

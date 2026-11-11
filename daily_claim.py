@@ -1,7 +1,7 @@
 """일일 부스터 [얻기] 버튼과 티켓제 미니슬롯.
 
 흐름
-1. 각 커맨드의 일일 부스터 지급 직후 send_daily_notice()가 안내 메시지를 보낸다
+1. 명령의 응답이나 게임 결과가 나온 뒤 send_daily_notice()가 안내 메시지를 보낸다
    (1분 뒤 자동 삭제). 메시지에는 한 번만 누를 수 있는 [얻기] 버튼이 붙는다.
 2. [얻기]를 누르면 미니슬롯 세션이 열린다. 첫 판은 수동(당기기)으로 굴리고,
    이후 남은 티켓은 자동 버튼 하나로만 소진한다.
@@ -346,7 +346,7 @@ class DailyClaimView(discord.ui.View):
         self.claimed = False
 
     @discord.ui.button(label="얻기", style=discord.ButtonStyle.success)
-    async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def claim(self, interaction: discord.Interaction, _button: discord.ui.Button):
         if str(interaction.user.id) != self.user_id:
             await interaction.response.send_message("본인만 조작할 수 있습니다.", ephemeral=True)
             return
@@ -354,8 +354,9 @@ class DailyClaimView(discord.ui.View):
             await interaction.response.defer()
             return
         self.claimed = True
-        button.disabled = True
-        await interaction.response.edit_message(view=self)
+        self.remove_item(_button)
+        self.stop()
+        await interaction.response.edit_message(view=None)
 
         user_scores = await async_load_scores(self.user_id)
         tickets = _coerce_int(user_scores.get("slot_ticket"), 0)
@@ -364,7 +365,6 @@ class DailyClaimView(discord.ui.View):
             return
         session = MiniSlotSession(self.user_id, tickets)
         await session.start(interaction.channel)
-        self.stop()
 
 
 async def send_daily_notice(ctx, result) -> None:
@@ -374,7 +374,7 @@ async def send_daily_notice(ctx, result) -> None:
         return
     try:
         await ctx.send(
-            f"{ctx.author.mention} 추가 부스터? {notice}",
+            notice,
             view=DailyClaimView(str(ctx.author.id)),
             delete_after=NOTICE_SECONDS,
         )

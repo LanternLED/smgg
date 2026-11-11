@@ -156,21 +156,22 @@ class BlackjackCog(commands.Cog):
         
     @commands.command(name='블랙잭판엎기')
     async def blackjack_shuffle(self, ctx):
-        await async_grant_daily_booster(str(ctx.author.id))
+        booster_result = await async_grant_daily_booster(str(ctx.author.id))
         await async_load_deck()
         blackjack_data["deck"] = create_deck()
         await ctx.send("손님...! 이러시면 안됩니다...!\n카드가 다 쏟아졌으니, 덱을 새로 준비해드리는게 낫겠습니다...")
         random.shuffle(blackjack_data["deck"])
         await async_save_deck()
+        await send_daily_notice(ctx, booster_result)
 
     @commands.command(name='블랙잭')
     async def blackjack(self, ctx, bet: int = 500):
         await async_load_deck()
         user_id = str(ctx.author.id)
         booster_result = await async_grant_daily_booster(user_id)
-        await send_daily_notice(ctx, booster_result)
         if user_id in active_blackjack_games:
             await ctx.send("이미 진행 중인 블랙잭 게임이 있습니다.")
+            await send_daily_notice(ctx, booster_result)
             return
         
         active_blackjack_games[user_id] = True
@@ -265,6 +266,7 @@ class BlackjackCog(commands.Cog):
             
         finally:
             active_blackjack_games.pop(user_id, None)
+            await send_daily_notice(ctx, booster_result)
 
 async def setup(bot):
     await bot.add_cog(BlackjackCog(bot))

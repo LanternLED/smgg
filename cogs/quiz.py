@@ -379,7 +379,6 @@ class QuizCog(commands.Cog):
             await ctx.send("이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
             return
         booster_result = await async_grant_daily_booster(user_id)
-        await send_daily_notice(ctx, booster_result)
         msg = await ctx.send("퀴즈 준비중...")
         await self.quiz_set(
             user_id,
@@ -387,6 +386,7 @@ class QuizCog(commands.Cog):
             user_mention=ctx.author.mention,
             display_name=ctx.author.display_name,
         )
+        await send_daily_notice(ctx, booster_result)
 
     @commands.command(name='무한퀴즈')
     async def quizinf(self, ctx):
@@ -396,9 +396,9 @@ class QuizCog(commands.Cog):
             return
         escape_event = asyncio.Event()
         infinite_quiz_escape_events[user_id] = escape_event
+        booster_result = None
         try:
             booster_result = await async_grant_daily_booster(user_id)
-            await send_daily_notice(ctx, booster_result)
             msg = await ctx.send("퀴즈 준비중...")
             await self.quiz_set(
                 user_id,
@@ -411,6 +411,8 @@ class QuizCog(commands.Cog):
             if infinite_quiz_escape_events.get(user_id) is escape_event:
                 infinite_quiz_escape_events.pop(user_id, None)
             raise
+        finally:
+            await send_daily_notice(ctx, booster_result)
 
     @commands.command(name='탈출')
     async def escape_infinite_game(self, ctx):

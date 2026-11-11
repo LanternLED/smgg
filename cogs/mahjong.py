@@ -1224,11 +1224,11 @@ class MahjongCog(commands.Cog):
     async def mahjong_start(self, ctx):
         user_id = str(ctx.author.id)
         booster_result = await async_grant_daily_booster(user_id)
-        await send_daily_notice(ctx, booster_result)
         await async_check_level(user_id)
 
         if user_id in active_mahjong_games:
             await ctx.send(f"{ctx.author.mention} 이미 진행 중인 게임이 있습니다.")
+            await send_daily_notice(ctx, booster_result)
             return
 
         game = MahjongGame(user_id)
@@ -1238,6 +1238,7 @@ class MahjongCog(commands.Cog):
         if tile is None:
             await ctx.send("패산 오류가 발생했습니다.")
             active_mahjong_games.pop(user_id, None)
+            await send_daily_notice(ctx, booster_result)
             return
     
         hand_msg      = await ctx.send(content=_mahjong_hand_str(game))
@@ -1245,6 +1246,7 @@ class MahjongCog(commands.Cog):
         msg           = await ctx.send(content=_mahjong_info_str(game, "🀄 마작 도전 시작!"))
         view          = MahjongDiscardView(game, msg)
         await msg.edit(view=view)
+        await send_daily_notice(ctx, booster_result)
 
 async def setup(bot):
     await bot.add_cog(MahjongCog(bot))

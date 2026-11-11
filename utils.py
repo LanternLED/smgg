@@ -432,8 +432,7 @@ def format_booster_gain(result) -> str:
     if not result:
         return ""
     gained, user_scores = result
-    tickets = _coerce_int(user_scores.get("slot_ticket"), 0)
     return (
         f"출석 보상 부스터 **+{gained:,}** 획득! (보유: {user_scores['booster']:,})"
-        f" · 미니슬롯 티켓 {tickets:,}장"
+        " · 추가 부스터?"
     )

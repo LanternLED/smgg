@@ -640,6 +640,7 @@ class TranscribeCog(commands.Cog):
             return
         escape_event = self._start(user_id)
         session_message: discord.Message | None = None
+        booster_result = None
         try:
             works = await asyncio.to_thread(list_works, user_id)
             if not works:
@@ -647,7 +648,6 @@ class TranscribeCog(commands.Cog):
                 return
 
             booster_result = await async_grant_daily_booster(user_id)
-            await send_daily_notice(ctx, booster_result)
 
             view = WorkPickerView(ctx.author.id, works, query.strip())
             session_message = await ctx.send(view.render_content(), view=view)
@@ -664,6 +664,7 @@ class TranscribeCog(commands.Cog):
                 await ctx.send(error_message)
         finally:
             self._finish(user_id, escape_event)
+            await send_daily_notice(ctx, booster_result)
 
     async def _pick_work(
         self,

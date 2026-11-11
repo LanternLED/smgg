@@ -400,7 +400,6 @@ class SlotCog(commands.Cog):
     @commands.cooldown(1, 600, commands.BucketType.user)
     async def show_slot_v2(self, ctx):
         booster_result = await async_grant_daily_booster(str(ctx.author.id))
-        await send_daily_notice(ctx, booster_result)
         init_board = "\n".join([SLOT_INIT * 5] * 3)
 
         # 1. 텍스트 없는 pure 이모지 메시지 (3x5 점보지 크기)
@@ -410,12 +409,12 @@ class SlotCog(commands.Cog):
         view = SlotView(ctx.author.id, slot_msg=slot_msg)
         control_msg = await ctx.send(f"{ctx.author.mention} **1,000 CHIPS BET!**", view=view)
         view.control_msg = control_msg
+        await send_daily_notice(ctx, booster_result)
 
     @commands.command(name='빅슬롯')
     @commands.cooldown(1, BIG_SLOT_REPLAY_COOLDOWN, commands.BucketType.user)
     async def show_big_slot(self, ctx):
         booster_result = await async_grant_daily_booster(str(ctx.author.id))
-        await send_daily_notice(ctx, booster_result)
 
         init_board = "\n".join([SLOT_INIT * BIG_SLOT_COLS] * BIG_SLOT_ROWS)
         slot_msg = await ctx.send(init_board)
@@ -432,6 +431,7 @@ class SlotCog(commands.Cog):
             view=view,
         )
         view.control_msg = control_msg
+        await send_daily_notice(ctx, booster_result)
 
     async def cog_command_error(self, ctx, error):
         """슬롯·빅슬롯 공통 에러 처리. 쿨타임 외의 에러는 삼키지 않고 로그로 남긴다."""

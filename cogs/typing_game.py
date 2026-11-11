@@ -230,9 +230,9 @@ class TypingGameCog(commands.Cog):
             typing_escape_events[user_id] = escape_event
         session_message = None
         last_result = ""
+        booster_result = None
         try:
             booster_result = await async_grant_daily_booster(user_id)
-            await send_daily_notice(ctx, booster_result)
             session_message = await ctx.send("타자연습을 준비 중입니다...")
 
             allowed_mentions = discord.AllowedMentions(
@@ -432,6 +432,7 @@ class TypingGameCog(commands.Cog):
             active_typing_sessions.discard(user_id)
             if typing_escape_events.get(user_id) is escape_event:
                 typing_escape_events.pop(user_id, None)
+            await send_daily_notice(ctx, booster_result)
 
 
 async def setup(bot: commands.Bot):
