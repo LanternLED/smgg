@@ -23,12 +23,12 @@ from cogs.typing_game import (
     join_parts,
     typing_edit_distance,
 )
+from daily_claim import send_daily_notice
 from utils import (
     apply_game_reward,
     async_check_level,
     async_grant_daily_booster,
     async_save_scores,
-    format_booster_gain,
     format_chip_balance,
     get_db_connection,
     get_user_lock,
@@ -653,9 +653,7 @@ class TranscribeCog(commands.Cog):
                 return
 
             booster_result = await async_grant_daily_booster(user_id)
-            booster_notice = format_booster_gain(booster_result)
-            if booster_notice:
-                await ctx.send(f"{ctx.author.mention} {booster_notice}")
+            await send_daily_notice(ctx, booster_result)
 
             view = WorkPickerView(ctx.author.id, works, query.strip())
             session_message = await ctx.send(view.render_content(), view=view)

@@ -5,9 +5,10 @@ import logging
 import random
 import time
 from slot_engine import SlotEngine
+from daily_claim import send_daily_notice
 from utils import (
     async_load_scores, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_booster_gain, format_chip_balance,
+    apply_game_reward, format_chip_balance,
     get_user_lock,
 )
 
@@ -398,9 +399,7 @@ class SlotCog(commands.Cog):
     @commands.cooldown(1, 600, commands.BucketType.user)
     async def show_slot_v2(self, ctx):
         booster_result = await async_grant_daily_booster(str(ctx.author.id))
-        booster_notice = format_booster_gain(booster_result)
-        if booster_notice:
-            await ctx.send(f"{ctx.author.mention} {booster_notice}")
+        await send_daily_notice(ctx, booster_result)
         init_board = "\n".join([SLOT_INIT * 5] * 3)
 
         # 1. 텍스트 없는 pure 이모지 메시지 (3x5 점보지 크기)
@@ -415,9 +414,7 @@ class SlotCog(commands.Cog):
     @commands.cooldown(1, BIG_SLOT_REPLAY_COOLDOWN, commands.BucketType.user)
     async def show_big_slot(self, ctx):
         booster_result = await async_grant_daily_booster(str(ctx.author.id))
-        booster_notice = format_booster_gain(booster_result)
-        if booster_notice:
-            await ctx.send(f"{ctx.author.mention} {booster_notice}")
+        await send_daily_notice(ctx, booster_result)
 
         init_board = "\n".join([SLOT_INIT * BIG_SLOT_COLS] * BIG_SLOT_ROWS)
         slot_msg = await ctx.send(init_board)

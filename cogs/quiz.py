@@ -5,9 +5,10 @@ import random
 import asyncio
 import re
 import logging
+from daily_claim import send_daily_notice
 from utils import (
     async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_booster_gain, format_chip_balance,
+    apply_game_reward, format_chip_balance,
     level_reward_bonus,
 )
 
@@ -372,9 +373,7 @@ class QuizCog(commands.Cog):
             await ctx.send("이전 퀴즈를 먼저 풀어주세요.", delete_after=5)
             return
         booster_result = await async_grant_daily_booster(user_id)
-        booster_notice = format_booster_gain(booster_result)
-        if booster_notice:
-            await ctx.send(f"{ctx.author.mention} {booster_notice}")
+        await send_daily_notice(ctx, booster_result)
         msg = await ctx.send("퀴즈 준비중...")
         await self.quiz_set(
             user_id,
@@ -393,9 +392,7 @@ class QuizCog(commands.Cog):
         infinite_quiz_escape_events[user_id] = escape_event
         try:
             booster_result = await async_grant_daily_booster(user_id)
-            booster_notice = format_booster_gain(booster_result)
-            if booster_notice:
-                await ctx.send(f"{ctx.author.mention} {booster_notice}")
+            await send_daily_notice(ctx, booster_result)
             msg = await ctx.send("퀴즈 준비중...")
             await self.quiz_set(
                 user_id,

@@ -10,12 +10,12 @@ import unicodedata
 import discord
 from discord.ext import commands
 
+from daily_claim import send_daily_notice
 from utils import (
     apply_game_reward,
     async_check_level,
     async_grant_daily_booster,
     async_save_scores,
-    format_booster_gain,
     format_chip_balance,
     get_db_connection,
     get_user_lock,
@@ -237,9 +237,7 @@ class TypingGameCog(commands.Cog):
         last_result = ""
         try:
             booster_result = await async_grant_daily_booster(user_id)
-            booster_notice = format_booster_gain(booster_result)
-            if booster_notice:
-                await ctx.send(f"{ctx.author.mention} {booster_notice}")
+            await send_daily_notice(ctx, booster_result)
             session_message = await ctx.send("타자연습을 준비 중입니다...")
 
             allowed_mentions = discord.AllowedMentions(

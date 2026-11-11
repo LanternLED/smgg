@@ -4,9 +4,10 @@ from discord.ext import commands
 import random
 from typing import List, Optional, Tuple
 from collections import Counter
+from daily_claim import send_daily_notice
 from utils import (
     async_check_level, async_save_scores, async_grant_daily_booster,
-    apply_game_reward, format_booster_gain, format_chip_balance,
+    apply_game_reward, format_chip_balance,
 )
 
 TILE_EMOJI = {
@@ -1222,9 +1223,7 @@ class MahjongCog(commands.Cog):
     async def mahjong_start(self, ctx):
         user_id = str(ctx.author.id)
         booster_result = await async_grant_daily_booster(user_id)
-        booster_notice = format_booster_gain(booster_result)
-        if booster_notice:
-            await ctx.send(f"{ctx.author.mention} {booster_notice}")
+        await send_daily_notice(ctx, booster_result)
         await async_check_level(user_id)
 
         if user_id in active_mahjong_games:

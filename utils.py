@@ -175,8 +175,29 @@ def get_db_connection():
     return conn
 
 
+_slot_ticket_column_ready = False
+
+
+def _ensure_slot_ticket_column(conn: sqlite3.Connection) -> None:
+    """user 테이블에 slot_ticket 컬럼이 없으면 한 번만 추가한다."""
+    global _slot_ticket_column_ready
+    if _slot_ticket_column_ready:
+        return
+    columns = conn.execute("PRAGMA table_info(user)").fetchall()
+    if columns and not any(column["name"] == "slot_ticket" for column in columns):
+        try:
+            conn.execute(
+                "ALTER TABLE user ADD COLUMN slot_ticket INTEGER NOT NULL DEFAULT 0"
+            )
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # 다른 스레드가 먼저 추가한 경우
+    _slot_ticket_column_ready = True
+
+
 def load_scores(user_id: str):
     conn = get_db_connection()
+    _ensure_slot_ticket_column(conn)
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM user WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
@@ -201,6 +222,7 @@ def load_scores(user_id: str):
     res["active"] = _coerce_int(res.get("active"), 0)
     res["quiz_streak"] = _coerce_int(res.get("quiz_streak"), 0)
     res["typing"] = _coerce_int(res.get("typing"), 0)
+    res["slot_ticket"] = _coerce_int(res.get("slot_ticket"), 0)
     # mahjong_played는 TEXT(DEFAULT NULL)라 정수 변환하지 않고 그대로 둔다
     return res
 
@@ -221,6 +243,7 @@ def _filter_score_updates(user_scores: dict) -> dict:
             "active",
             "quiz_streak",
             "typing",
+            "slot_ticket",
         }:
             filtered_updates[k] = _coerce_int(v, 0)
         else:
@@ -324,6 +347,10 @@ def grant_daily_booster(user_scores: dict):
         _coerce_int(user_scores.get("level"), 0),
     )
     user_scores["booster"] = _coerce_int(user_scores.get("booster"), 0) + gained
+    # 미니슬롯 티켓: 지급 일수(밀린 날짜 포함)만큼 1일 1장, 누적 상한 없음.
+    user_scores["slot_ticket"] = (
+        _coerce_int(user_scores.get("slot_ticket"), 0) + days_passed
+    )
     user_scores["daily_update"] = today.isoformat()
     return gained
 
@@ -343,4 +370,8 @@ def format_booster_gain(result) -> str:
     if not result:
         return ""
     gained, user_scores = result
-    return f"출석 보상 부스터 **+{gained:,}** 획득! (보유: {user_scores['booster']:,})"
+    tickets = _coerce_int(user_scores.get("slot_ticket"), 0)
+    return (
+        f"출석 보상 부스터 **+{gained:,}** 획득! (보유: {user_scores['booster']:,})"
+        f" · 미니슬롯 티켓 {tickets:,}장"
+    )

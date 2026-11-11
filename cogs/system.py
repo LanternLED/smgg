@@ -3,10 +3,11 @@ from discord.ext import commands
 import re
 from datetime import datetime, timedelta
 
+from daily_claim import send_daily_notice
 from utils import (
     async_check_level, async_save_scores, async_load_scores, calculate_score,
     async_load_scores_all, CHIP_BUY_RATE, CHIP_SELL_COST,
-    async_grant_daily_booster, format_booster_gain,
+    async_grant_daily_booster,
 )
 
 class SystemCog(commands.Cog):
@@ -19,12 +20,7 @@ class SystemCog(commands.Cog):
         if result is None:
             return None
         _, user_scores = result
-        booster_notice = format_booster_gain(result)
-        if booster_notice:
-            try:
-                await ctx.send(f"{ctx.author.mention} {booster_notice}")
-            except discord.HTTPException:
-                pass
+        await send_daily_notice(ctx, result)
         return user_scores
 
     @commands.command(name='탈퇴')
