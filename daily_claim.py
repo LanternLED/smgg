@@ -123,6 +123,7 @@ class MiniSlotSession(discord.ui.View):
         super().__init__(timeout=None)
         self.user_id = str(user_id)
         self.tickets_at_start = tickets
+        self.tickets_remaining = tickets
         self.message: discord.Message | None = None
         self.result_message: discord.Message | None = None
         self.running = False
@@ -248,9 +249,9 @@ class MiniSlotSession(discord.ui.View):
         user_scores, left = await update_user(self.user_id, settle)
         if left is None:
             return None
+        self.tickets_remaining = left
         result_content = (
             f"{note}부스터 **+{reward:,}** (보유: {user_scores['booster']:,})"
-            f" · 남은 티켓 {left:,}장"
         )
         if self.result_message is None:
             self.result_message = await self.message.channel.send(result_content)
@@ -329,8 +330,13 @@ class MiniSlotSession(discord.ui.View):
             self.running = False
             self._touch()
 
-        # 멈추거나 끝나면 자동 버튼은 다시 쓸 수 없다. 남은 티켓은 보관된다.
-        self.remove_item(self.auto_button)
+        # 멈춘 경우 남은 티켓 수를 표시하되, 자동 진행은 다시 시작할 수 없다.
+        if self.auto_stop and self.tickets_remaining > 0:
+            self.auto_button.label = f"자동 ({self.tickets_remaining:,})"
+            self.auto_button.style = discord.ButtonStyle.secondary
+            self.auto_button.disabled = True
+        else:
+            self.remove_item(self.auto_button)
         try:
             await self.message.edit(view=self)
         except discord.HTTPException:
@@ -356,7 +362,7 @@ class DailyClaimView(discord.ui.View):
         self.claimed = True
         self.remove_item(_button)
         self.stop()
-        await interaction.response.edit_message(view=None)
+        await interaction.response.delete_message()
 
         user_scores = await async_load_scores(self.user_id)
         tickets = _coerce_int(user_scores.get("slot_ticket"), 0)
