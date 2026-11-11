@@ -14,6 +14,7 @@ from utils import (
 logger = logging.getLogger(__name__)
 
 BIG_SLOT_REPLAY_COOLDOWN = 60
+BIG_SLOT_COST = 3600
 BIG_SLOT_ROWS = 6
 BIG_SLOT_COLS = 5
 
@@ -425,11 +426,11 @@ class SlotCog(commands.Cog):
             slot_msg=slot_msg,
             rows=BIG_SLOT_ROWS,
             cols=BIG_SLOT_COLS,
-            bet=3500,
+            bet=BIG_SLOT_COST,
             replay_cooldown=BIG_SLOT_REPLAY_COOLDOWN,
         )
         control_msg = await ctx.send(
-            f"{ctx.author.mention} **3,500 CHIPS BET!**",
+            f"{ctx.author.mention} **{BIG_SLOT_COST:,} CHIPS BET!**",
             view=view,
         )
         view.control_msg = control_msg
