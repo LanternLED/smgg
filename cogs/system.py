@@ -147,7 +147,7 @@ class SystemCog(commands.Cog):
         msg += (f"{target_name}님의 점수가 {target_score['score']}(으)로 변경되었습니다.")
         await ctx.send(msg)
 
-    @commands.command(name="내정보")
+    @commands.command(name="내정보", aliases=["출석"])
     async def info_self(self, ctx):
         user_id = str(ctx.author.id)
         try:
