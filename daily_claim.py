@@ -362,7 +362,13 @@ class DailyClaimView(discord.ui.View):
         self.claimed = True
         self.remove_item(_button)
         self.stop()
-        await interaction.response.delete_message()
+        # 3초 안에 먼저 응답(defer)한 뒤 안내 메시지를 지운다.
+        # (InteractionResponse에는 delete_message가 없어 AttributeError로 응답이 누락됐었다.)
+        await interaction.response.defer()
+        try:
+            await interaction.delete_original_response()
+        except discord.HTTPException:
+            pass  # 이미 delete_after로 지워졌어도 세션은 계속 진행한다.
 
         user_scores = await async_load_scores(self.user_id)
         tickets = _coerce_int(user_scores.get("slot_ticket"), 0)

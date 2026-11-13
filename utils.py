@@ -15,7 +15,6 @@ CHIP_SELL_COST = 1111      # 1시간(score) 구매에 필요한 칩
 BOOSTER_BASE_GAIN = 1000    # 하루 첫 상호작용 시 기본 지급량
 BOOSTER_DECAY = 0.95         # 밀린 날짜의 감쇠율
 BOOSTER_BASE_BONUS_PERCENT = 20
-BOOSTER_BONUS_PER_MAGNITUDE_PERCENT = 10
 
 # ── 유저 데이터 갱신 ─────────────────────────────────────────────
 # "읽기 → 수정 → 저장"은 반드시 update_user() / update_users()로 한 번에 처리한다.
@@ -49,9 +48,8 @@ def booster_n_percent(booster: int) -> float:
     """Return the total booster bonus percentage for the current balance."""
     if booster <= 0:
         return 0.0
-    percent = BOOSTER_BASE_BONUS_PERCENT + (
-        BOOSTER_BONUS_PER_MAGNITUDE_PERCENT * math.log10(booster / 10)
-    )
+    # max(기본 20%, 부스터의 제곱근 %) — 부스터가 400 이하면 20%, 그 위로는 √부스터 %
+    percent = max(BOOSTER_BASE_BONUS_PERCENT, math.sqrt(booster))
     return round(percent, 2)
 
 
@@ -60,7 +58,11 @@ def apply_booster(user_scores: dict, chip_gain: int, *, exp_rate: float = 0.1) -
     booster_val = _coerce_int(user_scores.get("booster"), 0)
     if chip_gain <= 0 or booster_val <= 0:
         return 0
-    bonus_percent_hundredths = round(booster_n_percent(booster_val) * 100)
+    # 기본 소모율(√ 방식) + 보상이 적은 게임 보정: 획득 칩이 100 미만이면 (100 - 칩)%를 더한다
+    small_reward_percent = max(0, 100 - chip_gain)
+    bonus_percent_hundredths = round(
+        (booster_n_percent(booster_val) + small_reward_percent) * 100
+    )
     bonus = min(
         booster_val,
         chip_gain * bonus_percent_hundredths // 10_000,
