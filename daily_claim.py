@@ -8,9 +8,8 @@
 3. 자동을 멈추면(또는 끝나면) 다시 켤 수 없다. 남은 티켓은 DB에 보관된다.
 4. 3분 동안 아무 조작이 없으면 세션 메시지를 삭제한다.
 
-티켓 1장의 기대값은 TICKET_BASE_REWARD + 배당 기대값 * TICKET_PRIZE_MULTIPLIER 이다.
-(현재 값 기준 약 1,000 부스터. 배당 편차를 줄이려면 TICKET_PRIZE_MULTIPLIER를
-낮추고 TICKET_BASE_REWARD를 올려 합이 1,000 근처가 되게 맞출 것.)
+자동 티켓은 최소 TICKET_BASE_REWARD를 지급하며, 배당을 더한 보상은
+TICKET_MAX_REWARD를 넘지 않는다. 수동 판의 황금 과일 보상에는 이 상한을 적용하지 않는다.
 """
 import asyncio
 import logging
@@ -28,45 +27,45 @@ logger = logging.getLogger(__name__)
 # ── 조정용 상수 ─────────────────────────────────────────────────
 NOTICE_SECONDS = 60          # 일일 부스터 안내(+[얻기]) 메시지 유지 시간
 IDLE_SECONDS = 180           # 미니슬롯 세션 방치 시 삭제까지의 시간
-TICKET_BASE_REWARD = 600     # 미당첨이어도 받는 기본 부스터
-TICKET_PRIZE_MULTIPLIER = 7.8  # 배당(110~999)에 곱하는 배수
+TICKET_BASE_REWARD = 500     # 미당첨이어도 받는 기본 부스터
+TICKET_MAX_REWARD = 1000     # 자동 티켓 한 장의 최대 부스터
 GOLDEN_FRUIT_CHANCE = 0.01   # 수동 판에서만 심볼당 황금 과일 확률
-GOLDEN_FRUIT_PRIZE = 333     # 황금 과일 1개당 추가 배당(배수 적용 전)
+GOLDEN_FRUIT_PRIZE = 777     # 황금 과일 1개당 추가 배당(배수 적용 전)
 
 SYMBOL_WEIGHTS = {
     'cake': 4,
     'cookie': 6,
     'bread': 8,
-    'apple': 12,
     'watermelon': 10,
+    'apple': 12,
     'carrot': 14,
     'baked_potato': 16,
     'potato': 18,
-    'poison': 12,
+    'poison': 3,
 }
 
 CATEGORY = {
     'cake': 'dessert', 'cookie': 'dessert', 'bread': 'dessert',
-    'apple': 'fruit', 'watermelon': 'fruit', 'carrot': 'fruit',
+    'watermelon': 'fruit', 'apple': 'fruit', 'carrot': 'fruit',
     'baked_potato': 'potato', 'potato': 'potato', 'poison': 'potato',
 }
 
 TRIPLE_PRIZE = {
-    'cake': 999, 'cookie': 888, 'bread': 777, 'apple': 777,
-    'watermelon': 777, 'carrot': 777, 'baked_potato': 666, 'potato': 555,
+    'cake': 1000, 'cookie': 900, 'bread': 800, 'watermelon': 700,
+    'apple': 600, 'carrot': 500, 'baked_potato': 400, 'potato': 300,
 }
-CATEGORY_TRIPLE_PRIZE = {'dessert': 880, 'fruit': 770, 'potato': 550}
+CATEGORY_TRIPLE_PRIZE = {'dessert': 900, 'fruit': 700, 'potato': 500}
 PAIR_PRIZE = {
-    'cake': 660, 'cookie': 550, 'bread': 440, 'apple': 330,
-    'watermelon': 330, 'carrot': 330, 'baked_potato': 220, 'potato': 110,
+    'cake': 400, 'cookie': 350, 'bread': 300, 'watermelon': 250,
+    'apple': 200, 'carrot': 150, 'baked_potato': 100, 'potato': 50,
 }
 
 SLOT_IDLE = "<a:slot:1300138026243981424>"
 SLOT_ROLLING = "<a:slot_rolling:1300138094644953088>"
 
 GOLDEN_ICON = {
-    'apple': ('golden_apple', '<a:slotg_apple:1300138918095880242>', '<a:slotgg_apple:1300139025222336662>'),
     'watermelon': ('golden_watermelon', '<a:slotg_watermelon:1300138951511900211>', '<a:slotgg_watermelon:1300139062715482254>'),
+    'apple': ('golden_apple', '<a:slotg_apple:1300138918095880242>', '<a:slotgg_apple:1300139025222336662>'),
     'carrot': ('golden_carrot', '<a:slotg_carrot:1300138928833036351>', '<a:slotgg_carrot:1300139044453220436>'),
 }
 
@@ -75,8 +74,8 @@ ROLL_ICONS = {
     'cake': ['<a:slot1_cake:1300138335532224674>', '<a:slot2_cake:1300138577757339759>', '<a:slot3_cake:1300138756329967709>'],
     'cookie': ['<a:slot1_cookie:1300138396756344840>', '<a:slot2_cookie:1300138615103557713>', '<a:slot3_cookie:1300138797987659786>'],
     'bread': ['<a:slot1_bread:1300138319598059531>', '<a:slot2_bread:1300138561726582955>', '<a:slot3_bread:1300138740320309248>'],
-    'apple': ['<a:slot1_apple:1300138283090575431>', '<a:slot2_apple:1300138503635734600>', '<a:slot3_apple:1300138691120992296>'],
     'watermelon': ['<a:slot1_watermelon:1300138452062441704>', '<a:slot2_watermelon:1300138661861654578>', '<a:slot3_watermelon:1300138887661879346>'],
+    'apple': ['<a:slot1_apple:1300138283090575431>', '<a:slot2_apple:1300138503635734600>', '<a:slot3_apple:1300138691120992296>'],
     'carrot': ['<a:slot1_carrot:1300138382223081562>', '<a:slot2_carrot:1300138593209159854>', '<a:slot3_carrot:1300138775329898538>'],
     'baked_potato': ['<a:slot1_baked_potato:1300138303042883715>', '<a:slot2_baked_potato:1300138542730711060>', '<a:slot3_baked_potato:1300138716781744128>'],
     'potato': ['<a:slot1_potato:1300138428834517004>', '<a:slot2_potato:1300138647470870528>', '<a:slot3_potato:1300138875817037874>'],
@@ -88,8 +87,8 @@ STOP_ICONS = {
     'cake': ['<a:sloto_cake:1300139130839367743>','<:slot_cake:1300138205344960523>'],
     'cookie': ['<a:sloto_cookie:1300139166201282622>','<:slot_cookie:1300138224479637566>'],
     'bread': ['<a:sloto_bread:1300139116737990656>','<:slot_bread:1300138195274432593>'],
-    'apple': ['<a:sloto_apple:1300139082244165693>','<:slot_apple:1300138174542254132>'],
     'watermelon': ['<a:sloto_watermelon:1300139208991703203>','<:slot_watermelon:1300138265273303201>'],
+    'apple': ['<a:sloto_apple:1300139082244165693>','<:slot_apple:1300138174542254132>'],
     'carrot': ['<a:sloto_carrot:1300139151324217354>','<:slot_carrot:1300138214908231771>'],
     'baked_potato': ['<a:sloto_baked_potato:1300139103249240128>','<:slot_baked_potato:1300138185057239182>'],
     'potato': ['<a:sloto_potato:1300139194944978955>','<:slot_potato:1300138247267291186>'],
@@ -111,9 +110,21 @@ def calculate_prize(slot_values: list[str]) -> int:
     return 0
 
 
-def ticket_reward(prize: int) -> int:
-    """배당을 부스터 지급액으로 환산한다. 미당첨(prize=0)도 기본금을 받는다."""
-    return TICKET_BASE_REWARD + int(prize * TICKET_PRIZE_MULTIPLIER)
+MAX_AUTO_PRIZE = max(
+    calculate_prize([first, second, third])
+    for first, first_weight in SYMBOL_WEIGHTS.items() if first_weight > 0
+    for second, second_weight in SYMBOL_WEIGHTS.items() if second_weight > 0
+    for third, third_weight in SYMBOL_WEIGHTS.items() if third_weight > 0
+)
+TICKET_PRIZE_MULTIPLIER = (
+    (TICKET_MAX_REWARD - TICKET_BASE_REWARD) / MAX_AUTO_PRIZE
+)
+
+
+def ticket_reward(prize: int, *, automatic: bool = True) -> int:
+    """배당을 부스터 지급액으로 환산한다. 자동 판에만 최대 지급량을 적용한다."""
+    reward = TICKET_BASE_REWARD + int(prize * TICKET_PRIZE_MULTIPLIER)
+    return min(TICKET_MAX_REWARD, reward) if automatic else reward
 
 
 class MiniSlotSession(discord.ui.View):
@@ -236,7 +247,7 @@ class MiniSlotSession(discord.ui.View):
             note += "**황금 과일!** "
             await self.message.edit(content="".join(icons), view=self)
 
-        reward = ticket_reward(prize)
+        reward = ticket_reward(prize, automatic=not manual)
 
         def settle(user_scores):
             tickets = _coerce_int(user_scores.get("slot_ticket"), 0)

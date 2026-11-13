@@ -26,8 +26,8 @@ ANIMATED_ICONS = {
     'cake': ['<a:slot1_cake:1300138335532224674>', '<a:slot2_cake:1300138577757339759>', '<a:slot3_cake:1300138756329967709>'],
     'cookie': ['<a:slot1_cookie:1300138396756344840>', '<a:slot2_cookie:1300138615103557713>', '<a:slot3_cookie:1300138797987659786>'],
     'bread': ['<a:slot1_bread:1300138319598059531>', '<a:slot2_bread:1300138561726582955>', '<a:slot3_bread:1300138740320309248>'],
-    'apple': ['<a:slot1_apple:1300138283090575431>', '<a:slot2_apple:1300138503635734600>', '<a:slot3_apple:1300138691120992296>'],
     'watermelon': ['<a:slot1_watermelon:1300138452062441704>', '<a:slot2_watermelon:1300138661861654578>', '<a:slot3_watermelon:1300138887661879346>'],
+    'apple': ['<a:slot1_apple:1300138283090575431>', '<a:slot2_apple:1300138503635734600>', '<a:slot3_apple:1300138691120992296>'],
     'carrot': ['<a:slot1_carrot:1300138382223081562>', '<a:slot2_carrot:1300138593209159854>', '<a:slot3_carrot:1300138775329898538>'],
     'baked_potato': ['<a:slot1_baked_potato:1300138303042883715>', '<a:slot2_baked_potato:1300138542730711060>', '<a:slot3_baked_potato:1300138716781744128>'],
     'potato': ['<a:slot1_potato:1300138428834517004>', '<a:slot2_potato:1300138647470870528>', '<a:slot3_potato:1300138875817037874>'],
@@ -38,8 +38,8 @@ STATIC_ICONS = {
     'cake': '<:slot_cake:1300138205344960523>',
     'cookie': '<:slot_cookie:1300138224479637566>',
     'bread': '<:slot_bread:1300138195274432593>',
-    'apple': '<:slot_apple:1300138174542254132>',
     'watermelon': '<:slot_watermelon:1300138265273303201>',
+    'apple': '<:slot_apple:1300138174542254132>',
     'carrot': '<:slot_carrot:1300138214908231771>',
     'baked_potato': '<:slot_baked_potato:1300138185057239182>',
     'potato': '<:slot_potato:1300138247267291186>',
@@ -51,8 +51,8 @@ WINNING_ICONS = {
     'cake': '<a:sloto_cake:1300139130839367743>',
     'cookie': '<a:sloto_cookie:1300139166201282622>',
     'bread': '<a:sloto_bread:1300139116737990656>',
-    'apple': '<a:sloto_apple:1300139082244165693>',
     'watermelon': '<a:sloto_watermelon:1300139208991703203>',
+    'apple': '<a:sloto_apple:1300139082244165693>',
     'carrot': '<a:sloto_carrot:1300139151324217354>',
     'baked_potato': '<a:sloto_baked_potato:1300139103249240128>',
     'potato': '<a:sloto_potato:1300139194944978955>',
@@ -60,13 +60,13 @@ WINNING_ICONS = {
 }
 
 GOLDEN_EMOJIS = {
-    'apple': {
-        'initial': '<a:slotg_apple:1300138918095880242>',
-        'final': '<a:slotgg_apple:1300139025222336662>'
-    },
     'watermelon': {
         'initial': '<a:slotg_watermelon:1300138951511900211>',
         'final': '<a:slotgg_watermelon:1300139062715482254>'
+    },
+    'apple': {
+        'initial': '<a:slotg_apple:1300138918095880242>',
+        'final': '<a:slotgg_apple:1300139025222336662>'
     },
     'carrot': {
         'initial': '<a:slotg_carrot:1300138928833036351>',

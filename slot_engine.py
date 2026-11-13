@@ -5,7 +5,7 @@ import copy
 # --- 데이터 테이블 ---
 # 주의: FRUITS 목록을 바꾸면 slot.py의 GOLDEN_EMOJIS도 함께 갱신해야 함
 # (골든 처리는 FRUITS에 속한 심볼에만 적용됨)
-FRUITS = ['apple', 'watermelon', 'carrot']
+FRUITS = ['watermelon', 'apple', 'carrot']
 NON_FRUITS = ['cake', 'cookie', 'bread', 'baked_potato', 'potato', 'poison']
 
 # 등장 가중치 (비과일의 확률을 높이고, 과일은 낮춰 밸런스 조절)

@@ -58,10 +58,10 @@ def apply_booster(user_scores: dict, chip_gain: int, *, exp_rate: float = 0.1) -
     booster_val = _coerce_int(user_scores.get("booster"), 0)
     if chip_gain <= 0 or booster_val <= 0:
         return 0
-    # 기본 소모율(√ 방식) + 보상이 적은 게임 보정: 획득 칩이 100 미만이면 (100 - 칩)%를 더한다
-    small_reward_percent = max(0, 100 - chip_gain)
+    # 획득 칩이 100 미만이면 부스터 비율에 (1 + (100 - 칩) / 25)를 곱한다.
+    small_reward_multiplier = 1 + max(0, 100 - chip_gain) / 25
     bonus_percent_hundredths = round(
-        (booster_n_percent(booster_val) + small_reward_percent) * 100
+        booster_n_percent(booster_val) * small_reward_multiplier * 100
     )
     bonus = min(
         booster_val,
